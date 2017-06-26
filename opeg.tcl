@@ -33,7 +33,7 @@ namespace eval ::pt::rde {
       
       ## strip down to just the core script fragment
       pt::peg::to::tclparam configure -template {@code@}
-      puts stderr ser=$ser
+      # puts stderr ser=$ser
       set body [pt::peg::to::tclparam convert $ser]
       set cls [nx::Class new -superclasses [self] -- $body]
       return $cls
@@ -106,7 +106,7 @@ namespace eval ::opeg {
     :public method walk {ast} {
       # TODO: this fails by not building up the [next] chain, why?
       # :input {*}$ast
-      puts stderr AST=$ast
+      # puts stderr AST=$ast
       : input {*}$ast
     }
 
@@ -124,14 +124,16 @@ namespace eval ::opeg {
     :method rewrite {opegAst input} {
       set pegAst [next]
       ## add ctors to OPEG structure
-      if {[info exists :ctors]} {
-        set :ctors [dict map {nt ctors} ${:ctors} {
-          if {![llength [concat {*}$ctors]]} {
+      # puts specs=${:specs}
+      if {[info exists :specs]} {
+        set :specs [dict map {nt specs} ${:specs} {
+          if {![llength [concat {*}$specs]]} {
             continue
           }
-          set ctors
+          set specs
         }]
       }
+      # puts specs=${:specs}
       return $pegAst
     }
 
@@ -167,7 +169,7 @@ namespace eval ::opeg {
     :method "input Field" {s e args} {
       set args [lassign $args field]
       lappend :fields [lindex $field 1]
-      puts stderr FIELDARGS=$args
+      # puts stderr FIELDARGS=$args
       if {0} {
         ## TODO: recognize and handle ?/+/* operators
         puts stderr FIELDARGS=$args
@@ -188,28 +190,28 @@ namespace eval ::opeg {
       # args = list/1 (class) 
       # args = list/n (list/1 ...) (gtor prefix ...)
       set ctor [lindex $args 0]
-      puts stderr <CTOR>=$ctor
+      set spec [dict create]
       if {[llength $args] > 1 && [llength $ctor] == 1} {
+        dict set spec generator $ctor
         set args [lrange $args 1 end]
-        if {[info exists :fields] && [llength ${:fields}]} {
-          puts stderr COLLECT=${:fields}
-          lappend ctor {*}${:fields}
-          unset :fields
-        }
-      } else {
-        set ctor ""
       }
-      list $ctor {*}[next [list $s $e {*}$args]]
+      
+      if {[info exists :fields] && [llength ${:fields}]} {
+        dict set spec fields ${:fields}
+        unset :fields
+      }
+      
+      list $spec {*}[next [list $s $e {*}$args]]
     }
 
     :method "input Expression" {s e args} {
       set rargs [list]
       set :choices [list]
       foreach i $args {
-        set resid [lassign $i ctor]
+        set resid [lassign $i spec]
         # TODO: stack them up for validation, over multiple levels of
         # (sub-)expressions!
-        lappend :choices $ctor; 
+        lappend :choices $spec; 
         lappend rargs $resid
       }
       next [list $s $e {*}$rargs]
@@ -218,7 +220,7 @@ namespace eval ::opeg {
     :method "input Definition" {s e args} {
       set def [next]
       if {[info exists :choices]} {
-        dict set :ctors [lindex $def 0] ${:choices}
+        dict set :specs [lindex $def 0] ${:choices}
         unset :choices
       }
       return $def
@@ -244,15 +246,27 @@ namespace eval ::opeg {
         set targs [string range ${:sourcecode} $start $end]
       }
       lassign $current nt objspec      
-
+      # puts stderr "PROCESSING($nt)='$objspec'"
       if {$objspec ne ""} {
-        set fieldspec [lassign $objspec cls]
-        set fields ""
-        if {[llength $fieldspec]} {
-          set fields [join [concat {*}[lmap f ${fieldspec} v $targs {list -$f $v}]]]
+        set fargs ""
+        dict with objspec {
+          if {[info exists fields] && [llength $fields]} {
+            set fargs [join [concat {*}[lmap f $fields v $targs {list -$f $v}]]]
+          }
+
+          if {[info exists generator]} {
+            if {[info exists :fargs]} {
+              set fargs [list {*}${:fargs} {*}$fargs]
+              unset :fargs
+            }
+            # puts "FORMULA($nt)=$generator new {*}$fargs"
+            set :current [$generator new {*}$fargs]
+          } else {
+            # store current fields for later evaluation
+            lappend :fargs {*}$fargs
+            # puts "FORMULA($nt)=${:fargs}"
+          }
         }
-        puts stderr FIELDS={*}$fields
-        set :current [$cls new {*}$fields]
       }
 
       set v ""
@@ -329,12 +343,15 @@ namespace eval ::opeg {
           }
           unset -nocomplain :choices($mark)
           # inject the ctor
-          set ctors [[[:info class] generator get] eval {set :ctors}]
+          set ctors [[[:info class] generator get] eval {set :specs}]
           if {[dict exists $ctors $sym]} {
-            set ctor [lindex [dict get $ctors $sym] $idx]
-            if {$ctor ne ""} {
+            set spec [lindex [dict get $ctors $sym] $idx]
+            if {$spec ne ""} {
               set ast [${:mystackast} pop]
-              lset ast 0 1 $ctor
+              # puts spec=[dict values $spec]
+              # TODO: FIX this here!
+              # lset ast 0 1 [concat {*}[dict values $spec]];# $ctor
+              lset ast 0 1 $spec
               ${:mystackast} push $ast
               # update cache entry, if any
               if {[info exists :mysymbol($k)]} {
@@ -488,22 +505,36 @@ $coordBuilder print {(1,2)}
 #   XY {fields {x y}}
 # }
 
-# set g2b {
-# OPEG Coordinate (P)
-#        XY          <- x:Digit ',' y:Digit;
-#        P           <- `Point` '(' XY ')';
-# leaf:  Digit       <- <digit>+;
-# END;}
+set g2b {
+OPEG Coordinate (P)
+       XY          <- x:Digit ',' y:Digit;
+       P           <- `Point` '(' XY ')';
+leaf:  Digit       <- <digit>+;
+END;}
 
-# puts stderr <<<<<
-# set builderClass [$builderGen bgen $g2b]
-# # $builderGen print $g2b
-# set coordBuilder [$builderClass new]
+set builderClass [$builderGen bgen $g2b]
+# $builderGen print $g2b
+set coordBuilder [$builderClass new]
 
-# puts stderr >>>>>
-# $coordBuilder print {(1,2)}
-# ? {[$coordBuilder parse {(1,2)}] info class} ::Point
-# ? {[$coordBuilder parse {(3,4)}] cget -y} 4
+$coordBuilder print {(1,2)}
+? {[$coordBuilder parse {(1,2)}] info class} ::Point
+? {[$coordBuilder parse {(3,4)}] cget -y} 4
+
+set g2c {
+OPEG Coordinate (P)
+P                  <- `Point` '(' XY ')';
+XY                 <- A ',' B;
+A                  <- x:Digit;
+B                  <- y:Digit;
+leaf:  Digit       <- <digit>+;
+END;}
+
+set builderClass [$builderGen bgen $g2c]
+set coordBuilder [$builderClass new]
+
+$coordBuilder print {(1,2)}
+? {[$coordBuilder parse {(1,2)}] info class} ::Point
+? {[$coordBuilder parse {(3,4)}] cget -y} 4
 
 
 
