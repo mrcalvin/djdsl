@@ -122,7 +122,9 @@ namespace eval ::opeg {
     }
 
     :method rewrite {opegAst input} {
+      set :defCounter 0
       set pegAst [next]
+      unset :defCounter
       ## add ctors to OPEG structure
       # puts specs=${:specs}
       if {[info exists :specs]} {
@@ -156,25 +158,65 @@ namespace eval ::opeg {
       pt::peg::to::tclparam configure -template {@code@}
 
       set body [pt::peg::to::tclparam convert $ser]
-      set cls [[current class]::Class new -superclasses [namespace current]::Builder \
+      set cls [[current class]::Class new \
+                   -superclasses [namespace current]::Builder \
                    -factory $modelFactory \
                    -generator [self] -- $body]
       return $cls
+    }
+
+    :method "input Grammar" {s e args} {
+      if {[info exists :fieldDefs]} {
+
+        set tmp [dict map {fieldDef defs} ${:fieldDefs} {
+          if {[llength $defs] > 1} {
+            lindex $defs end 
+          } else {
+            lindex $defs 0
+          }
+          
+        }]
+        # lappend args {*}[concat {*}[dict values ${:fieldDefs}]]
+        lappend args {*}[dict values $tmp]
+        unset :fieldDefs
+      }
+      next [list $s $e {*}$args]
     }
     
     :method "input Ctor" {s e args} {
       return [lindex $args 0 1]
     }
 
+    # :method "input Field" {s e args} {
+    #   set args [lassign $args field]
+    #   lappend :fields [lindex $field 1]
+    #   # puts stderr FIELDARGS=$args
+    #   if {0} {
+    #     ## TODO: recognize and handle ?/+/* operators
+    #     puts stderr FIELDARGS=$args
+    #   }
+    #   return [lindex $args 0]
+    # }
+
     :method "input Field" {s e args} {
       set args [lassign $args field]
       lappend :fields [lindex $field 1]
-      # puts stderr FIELDARGS=$args
       if {0} {
         ## TODO: recognize and handle ?/+/* operators
         puts stderr FIELDARGS=$args
       }
-      return [lindex $args 0]
+      set ntIdent "_FIELD_${:defCounter}_[lindex $field 1]"
+      # 1) compile + register 'field' definitions.
+      #
+      # _1_x {is {n Digit} mode value} _1_y {is {n Digit} mode value}
+      
+      dict lappend :fieldDefs $ntIdent [pt::peg::from::peg::GEN::Definition $s $e "value" [list n $ntIdent] [lindex $args 0]]
+      
+      # 
+      # 2) inject reference to 'field' definition identifiers
+      #
+      # {n x} {n Digit} -> n _1_x
+      return [list n $ntIdent]
     }
 
     ## pt::peg::from::peg::GEN::Identifier
@@ -206,21 +248,24 @@ namespace eval ::opeg {
 
     :method "input Expression" {s e args} {
       set rargs [list]
-      set :choices [list]
+      set choices [list]
       foreach i $args {
         set resid [lassign $i spec]
         # TODO: stack them up for validation, over multiple levels of
         # (sub-)expressions!
-        lappend :choices $spec; 
+        lappend choices $spec; 
         lappend rargs $resid
       }
+      lappend :choices $choices
       next [list $s $e {*}$rargs]
     }
         
     :method "input Definition" {s e args} {
+      incr :defCounter
       set def [next]
       if {[info exists :choices]} {
-        dict set :specs [lindex $def 0] ${:choices}
+        set c [lindex ${:choices} end]
+        dict set :specs [lindex $def 0] $c
         unset :choices
       }
       return $def
@@ -228,6 +273,30 @@ namespace eval ::opeg {
     
   }
 
+        
+      # if {0} {
+      #   if {$objspec ne ""} {
+      #     set fargs ""
+      #     dict with objspec {
+      #       if {[info exists fields] && [llength $fields]} {
+      #         set fargs [join [concat {*}[lmap f $fields v $targs {list -$f $v}]]]
+      #       }
+            
+      #       if {[info exists generator]} {
+      #         if {[info exists :fargs]} {
+      #           set fargs [list {*}${:fargs} {*}$fargs]
+      #           unset :fargs
+      #         }
+      #         puts "FORMULA($nt)=$generator new {*}$fargs"
+      #         set :current [$generator new {*}$fargs]
+      #       } else {
+      #         # store current fields for later evaluation
+      #         lappend :fargs {*}$fargs
+      #         puts "FORMULA($nt)=${:fargs}"
+      #       }
+      #     }
+      #   }
+      # }
 
   nx::Class create ModelFactory {
     
@@ -236,35 +305,41 @@ namespace eval ::opeg {
     :public method postOrder {varName ast script {level 0}} {
       upvar [incr level] $varName var
       set ast [lassign $ast current start end]
-    
+      set childrenFlds [list]
       # default to the leaf/literal value?
+
       foreach c $ast {
-        lappend targs [:postOrder $varName $c $script $level]
+        lassign [:postOrder $varName $c $script $level] cFields cArgs
+        lappend childrenFlds {*}$cFields
+        lappend targs $cArgs
+      }
+
+      # coalesce fields
+
+      set flds [dict create]
+      if {[llength $childrenFlds]} {
+        foreach {f v} $childrenFlds {
+          dict lappend flds $f $v
+        }
       }
 
       if {![info exists targs]} {
         set targs [string range ${:sourcecode} $start $end]
       }
       lassign $current nt objspec      
-      # puts stderr "PROCESSING($nt)='$objspec'"
-      if {$objspec ne ""} {
-        set fargs ""
-        dict with objspec {
-          if {[info exists fields] && [llength $fields]} {
-            set fargs [join [concat {*}[lmap f $fields v $targs {list -$f $v}]]]
-          }
 
+      if {[string first "_FIELD_" $nt] > -1} {
+        set f [lindex [split $nt _] end]
+        # dict lappend :fargs -$f $targs
+        dict lappend flds -$f $targs
+      }
+      
+      if {$objspec ne ""} {
+        dict with objspec {
           if {[info exists generator]} {
-            if {[info exists :fargs]} {
-              set fargs [list {*}${:fargs} {*}$fargs]
-              unset :fargs
-            }
-            # puts "FORMULA($nt)=$generator new {*}$fargs"
-            set :current [$generator new {*}$fargs]
-          } else {
-            # store current fields for later evaluation
-            lappend :fargs {*}$fargs
-            # puts "FORMULA($nt)=${:fargs}"
+            set :current [$generator new {*}$flds]
+            set flds [list]
+
           }
         }
       }
@@ -287,7 +362,7 @@ namespace eval ::opeg {
 
       set var $v
       uplevel $level $script
-      return $v
+      return [list $flds $v]
       
     }
   }
@@ -391,15 +466,18 @@ nx::Class create Const {
 # A corresponding Object PEG (OPEG)
 #
 
+# validation rules: no definition with field declarations must be in
+# mode 'leaf'.
+
 set g {
-  OPEG Calculator (Term)
-  Term  <- `Binary` lhs:Prim ' '* op:AddOp ' '* rhs:Prim / Prim;
-  leaf: Prim      <- `Const` value:Num;
-  Num <- Sign? Digit+                      ;
-  Digit       <- '0'/'1'/'2'/'3'/'4'/'5'/'6'/'7'/'8'/'9'   ;
-  Sign        <- '-' / '+'                                 ;
-  AddOp       <- '+' / '-'                                 ;
-  END;
+OPEG Calculator (Term)
+      Term        <- `Binary` lhs:Prim ' '* op:AddOp ' '* rhs:Prim / Prim;
+      Prim        <- `Const` value:Num;
+leaf: Num         <- Sign? Digit+                      ;
+      Digit       <- '0'/'1'/'2'/'3'/'4'/'5'/'6'/'7'/'8'/'9'   ;
+      Sign        <- '-' / '+'                                 ;
+      AddOp       <- '+' / '-'                                 ;
+END;
 }
 
 #
@@ -428,6 +506,7 @@ set builder [$builderClass new]
 # the domain model directly.
 #
 
+$builder print {1+2}
 set rObj [$builder parse {1+2}]
 
 ? {$rObj info class} ::Binary
@@ -458,18 +537,19 @@ set rObj [$builder parse {4-3}]
 set g1 {
 PEG Coordinate (P)
   P           <- '(' Digit+ ',' Digit ')';
-#  Digit       <- '0'/'1'/'2'/'3'/'4'/'5'/'6'/'7'/'8'/'9';
   Digit       <- <digit> <digit>;
 END;}
 
+# set g1 {
+# PEG Coordinate (DigitPairs)
+#    DigitPairs  <-  Digit (',' DigitPairs)?;
+#    Digit       <- <digit> <digit>;
+# END;}
+
 
 set coordParser [[pt::rde::nx pgen $g1] new]
-$coordParser print {(1122,23)}
-
-nx::Class create Point {
-  :property x:integer
-  :property y:integer
-}
+$coordParser print {(11,22)}
+# puts stderr [$coordParser parset {(11,22)}]
 
 
 # {
@@ -489,6 +569,11 @@ END;}
 #   Digit       <- '0'/'1'/'2'/'3'/'4'/'5'/'6'/'7'/'8'/'9'      ;
 # END;}
 
+
+nx::Class create Point {
+  :property x:integer
+  :property y:integer
+}
 
 set builderGen [BuilderGenerator new]
 set builderClass [$builderGen bgen $g2a]
@@ -547,11 +632,6 @@ $coordBuilder print {(1,2)}
 ## annotation-like: --> @IDENTIFIER
 ## FOR NOW: grave accent `...`
 
-set g2 {
-  OPEG Coordinate (P)
-  P           <- `::Point` '(' x:<digit>+ ',' y:<digit>+ ')' ;
-  END;}
-
 ## 
 ## 2) -> Revise field notation to support built-in (PT, string is) ranges as well as non-terminal values for fields.
 ## DONE
@@ -559,7 +639,59 @@ set g2 {
 
 ## 3) -> Support for collections
 
+set g3 {
+OPEG Coordinate (P)
+       P  <- `HyperPoint` '(' (x:<digit>)+ ',' (x:<digit> y:<digit>)? ')';
+END;}
 
+# puts stderr [string index $g3 41]
+$builderGen print $g3
+set builderClass [$builderGen bgen $g3]
+set coordBuilder [$builderClass new]
+
+
+nx::Class create HyperPoint {
+  :property x:integer,1..*
+  :property y:integer
+}
+
+$coordBuilder print {(92,32)}; #$coordBuilder print {(987,2)}
+set p [$coordBuilder parse {(92,32)}]; #set p [$coordBuilder parse {(987,2)}]
+? {$p info class} ::HyperPoint
+? {$p cget -x} "9 2 3";
+? {$p cget -y} "2";
+
+# C ::= [Call] fun:id "(" args:Exp* @"," ")"
+
+nx::Class create Call {
+  :property fun
+  :property args
+}
+
+set g4 {
+OPEG CallDecl (C)
+      C    <- `Call` fun:ID '(' (args:Exp)? (',' args:Exp)* ')';
+      ID   <- 'foo';
+      Exp  <- <digit>;
+END;}
+
+# TODO:
+# ARGS <- args:Exp (','ARGS)* adds cascaded of lists
+# ARGS <- (args:Exp)? (',' args:Exp)* a top-level list -> flatten!
+
+$builderGen print $g4
+set builderClass [$builderGen bgen $g4]
+set callBuilder [$builderClass new]
+
+set c [$callBuilder parse {foo(1,1,2,2)}]; #set p [$coordBuilder parse {(987,2)}]
+? {$c info class} ::Call
+? {$c cget -fun} "foo";
+? {$c cget -args} "1 1 2 2";
+
+set c [$callBuilder parse {foo()}]; #set p [$coordBuilder parse {(987,2)}]
+? {$c info class} ::Call
+? {$c cget -fun} "foo";
+? {$c cget -args} {can't read "args": no such variable};
 
 ## 4) -> Complex graphs vs. metamodeling structures: challenging objspecs
 ## 5) -> Sanity checks at all steps
