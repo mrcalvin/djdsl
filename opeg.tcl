@@ -307,7 +307,6 @@ namespace eval ::opeg {
       set ast [lassign $ast current start end]
       set childrenFlds [list]
       # default to the leaf/literal value?
-
       foreach c $ast {
         lassign [:postOrder $varName $c $script $level] cFields cArgs
         lappend childrenFlds {*}$cFields
@@ -319,9 +318,10 @@ namespace eval ::opeg {
       set flds [dict create]
       if {[llength $childrenFlds]} {
         foreach {f v} $childrenFlds {
-          dict lappend flds $f $v
+          dict lappend flds $f {*}$v
         }
       }
+
 
       if {![info exists targs]} {
         set targs [string range ${:sourcecode} $start $end]
@@ -331,7 +331,7 @@ namespace eval ::opeg {
       if {[string first "_FIELD_" $nt] > -1} {
         set f [lindex [split $nt _] end]
         # dict lappend :fargs -$f $targs
-        dict lappend flds -$f $targs
+        dict lappend flds -$f {*}$targs
       }
       
       if {$objspec ne ""} {
@@ -536,8 +536,10 @@ set rObj [$builder parse {4-3}]
 
 set g1 {
 PEG Coordinate (P)
-  P           <- '(' Digit+ ',' Digit ')';
-  Digit       <- <digit> <digit>;
+P            <- OPENP Digit+ ',' Digit CLOSEP;
+void: OPENP  <- '(';
+void: CLOSEP <- ')';
+Digit        <- <digit> <digit>;
 END;}
 
 # set g1 {
@@ -549,7 +551,7 @@ END;}
 
 set coordParser [[pt::rde::nx pgen $g1] new]
 $coordParser print {(11,22)}
-# puts stderr [$coordParser parset {(11,22)}]
+puts stderr [$coordParser parset {(11,22)}]
 
 
 # {
@@ -675,70 +677,123 @@ OPEG CallDecl (C)
       Exp  <- <digit>;
 END;}
 
-# TODO:
-# ARGS <- args:Exp (','ARGS)* adds cascaded of lists
-# ARGS <- (args:Exp)? (',' args:Exp)* a top-level list -> flatten!
-
 $builderGen print $g4
 set builderClass [$builderGen bgen $g4]
 set callBuilder [$builderClass new]
 
-set c [$callBuilder parse {foo(1,1,2,2)}]; #set p [$coordBuilder parse {(987,2)}]
+set c [$callBuilder parse {foo(1,1,2,2)}];
 ? {$c info class} ::Call
 ? {$c cget -fun} "foo";
 ? {$c cget -args} "1 1 2 2";
 
-set c [$callBuilder parse {foo()}]; #set p [$coordBuilder parse {(987,2)}]
+set c [$callBuilder parse {foo()}];
 ? {$c info class} ::Call
 ? {$c cget -fun} "foo";
 ? {$c cget -args} {can't read "args": no such variable};
 
-## 4) -> Complex graphs vs. metamodeling structures: challenging objspecs
-## 5) -> Sanity checks at all steps
+# TODO:
+# ARGS <- (args:Exp)? (',' args:Exp)* a top-level list -> flatten!
 
-exit
+set g5 {
+OPEG CallDecl (C)
+      C    <- `Call` fun:ID '(' ARGS ')';
+      ARGS <- (args:Exp)? (',' args:Exp)*;
+      ID   <- 'foo';
+      Exp  <- <digit>;
+END;}
 
-set s {
-  PEG Calculator (Expression)
-  Expression  <- Term (' '* AddOp ' '* Term)*                 ;
-  Term        <- Factor (' '* MulOp ' '* Factor)*             ;
-  Fragment    <- '(' ' '* Expression ' '*  ')' / Number / Var ;
-  Factor      <- Fragment (' '* PowOp ' '* Fragment)*         ;
-  Number      <- Sign? Digit+                                 ;
-  Var         <- '$' ( 'x'/'y'/'z' )                          ;
-  
-  Digit       <- '0'/'1'/'2'/'3'/'4'/'5'/'6'/'7'/'8'/'9'      ;
-  Sign        <- '-' / '+'                                    ;
-  MulOp       <- '*' / '/'                                    ;
-  AddOp       <- '+' / '-'                                    ;
-  PowOp       <- '**'                                         ;
-  END;
+$builderGen print $g5
+set builderClass [$builderGen bgen $g5]
+set callBuilder [$builderClass new]
+
+set c [$callBuilder parse {foo(1,1,2,2)}];
+? {$c info class} ::Call
+? {$c cget -fun} "foo";
+? {$c cget -args} "1 1 2 2";
+
+# ARGS <- args:Exp (','ARGS)* adds cascaded of lists
+
+set g6 {
+OPEG CallDecl (C)
+      C    <- `Call` fun:ID '(' ARGS ')';
+      ARGS <- (args:Exp)? (',' ARGS)*;
+      ID   <- 'foo';
+      Exp  <- <digit>;
+END;}
+
+$builderGen print $g6
+set builderClass [$builderGen bgen $g6]
+set callBuilder [$builderClass new]
+
+set c [$callBuilder parse {foo(2,1,2,5)}];
+? {$c info class} ::Call
+? {$c cget -fun} "foo";
+? {$c cget -args} "2 1 2 5";
+
+## 4) -> Enso examples
+
+# start Drawing
+# Drawing ::= [Drawing] "drawing" /> lines:Line* @/ /
+# Line ::= [Line] "line" label:str /> points:Point2D* @/ < Adj? 
+# Adj ::= / "adj" adj:<root.lines[it]>
+# Point3D ::= [Point3D] "point" x:int y:int z:int
+# Point2D ::= [Point2D] "point" x:int y:int
+
+nx::Class create Drawing {
+  :property lines:0..n,object,type=::Line
 }
 
-set s2 {
-  PEG Calculator (Term)
-  Term  <- `Binary` lhs:Prim ' '* op:AddOp ' '* rhs:Prim / `Binary` (A/B);
-  A <-       'a';
-  B <-       Prim / Sign  ;
-  leaf: Prim      <- `Const` value:Num;
-  Num <- Sign? Digit+                      ;
-  Digit       <- '0'/'1'/'2'/'3'/'4'/'5'/'6'/'7'/'8'/'9'   ;
-  Sign        <- '-' / '+'                                 ;
-  #	MulOp       <- '*' / '/'                                 ;
-  AddOp       <- '+' / '-'                                 ;
-  END;}
+nx::Class create Line {
+  :property label
+  :property points:0..n,object,type=::Point2D
+  # :property adj:object,type=::Line
+  :property adj
+}
 
-set s2 {
-  PEG Calculator (Term)
-  Term  <- `Binary` lhs:Prim ' '* op:AddOp ' '* rhs:Prim / Prim;
-  leaf: Prim      <- `Const` value:Num;
-  Num <- Sign? Digit+                      ;
-  Digit       <- '0'/'1'/'2'/'3'/'4'/'5'/'6'/'7'/'8'/'9'   ;
-  Sign        <- '-' / '+'                                 ;
-  #	MulOp       <- '*' / '/'                                 ;
-  AddOp       <- '+' / '-'                                 ;
-  END;}
+nx::Class create Point2D {
+  :property x:integer
+  :property y:integer
+}
 
+set geom {
+OPEG Drawing (Drawing)
+      Drawing    <- `Drawing` 'drawing' (<space>+ lines:Line)+;
+      Line       <- `Line` 'line' ' '+ DAPOSTROPH label:Str DAPOSTROPH (' '+ points:Point2D)* ' '+ Adj?;
+Adj        <- 'adj' ' '+ DAPOSTROPH adj:Str DAPOSTROPH;
+# paths:
+#      Adj        <- 'adj' ' '+ DAPOSTROPH adj:(`$root lines $current` Str) DAPOSTROPH;
+      Str        <- !DAPOSTROPH <alnum>*;
+      Point2D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
+void:      DAPOSTROPH    <- '\"' ;
+END;}
+
+set d {drawing
+  line "Flamingo" point 1 1 point 2 2 point 20 20 point 21 21 point 3 3 point 4 4 point 22 22 point 23 23 adj "Stork"
+  line "Stork" point 1 1 point 10 10 adj "Flamingo"}
+
+set builderGen [BuilderGenerator new]
+set builderClass [$builderGen bgen $geom]
+set diagramBuilder [$builderClass new]
+
+set c [$diagramBuilder parse $d]
+? {$c info class} ::Drawing
+set lines [$c cget -lines]
+? {llength $lines} 2
+lassign $lines l1 l2
+? {$l1 info class} ::Line
+? {$l1 cget -label} "Flamingo"
+? {$l1 cget -adj} "Stork"
+? {llength [$l1 cget -points]} 8
+? {$l2 info class} ::Line
+? {$l2 cget -label} "Stork"
+? {$l2 cget -adj} "Flamingo"
+? {llength [$l2 cget -points]} 2
+
+## TODOS:
+## - fix value passing for quoted, braced values ... too many nesting levels
+## - add support for lazily acquired references/paths for fields --> adj:(`$root lines $current` Str)
+
+## 5) -> Sanity checks at all steps
 
 # Local variables:
 #    mode: tcl
