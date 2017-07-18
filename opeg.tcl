@@ -184,8 +184,14 @@ namespace eval ::opeg {
     }
     
     :method "input Ctor" {s e args} {
-      return [lindex $args 0 1]
+      return [list c [lindex $args 0 1]]
     }
+
+    :method "input Command" {s e args} {
+      # operates like Ident
+      return [:input Ident $s $e]
+    }
+
 
     # :method "input Field" {s e args} {
     #   set args [lassign $args field]
@@ -200,7 +206,6 @@ namespace eval ::opeg {
 
     :method "input Field" {s e args} {
       set args [lassign $args field]
-      lappend :fields [lindex $field 1]
       if {0} {
         ## TODO: recognize and handle ?/+/* operators
         puts stderr FIELDARGS=$args
@@ -211,11 +216,22 @@ namespace eval ::opeg {
       # _1_x {is {n Digit} mode value} _1_y {is {n Digit} mode value}
       
       dict lappend :fieldDefs $ntIdent [pt::peg::from::peg::GEN::Definition $s $e "value" [list n $ntIdent] [lindex $args 0]]
-      
       # 
       # 2) inject reference to 'field' definition identifiers
       #
       # {n x} {n Digit} -> n _1_x
+
+      #
+      # 3) Are there "fixes" (paths) to consider?
+      #
+      set f [lindex $field 1]
+      if {[info exists :choices]} {
+        set c [lindex ${:choices} end]
+        lappend f $c
+        unset :choices
+      }
+      lappend :fields $f
+      
       return [list n $ntIdent]
     }
 
@@ -233,8 +249,8 @@ namespace eval ::opeg {
       # args = list/n (list/1 ...) (gtor prefix ...)
       set ctor [lindex $args 0]
       set spec [dict create]
-      if {[llength $args] > 1 && [llength $ctor] == 1} {
-        dict set spec generator $ctor
+      if {[llength $args] > 1 && [lindex $ctor 0] eq "c"} {
+        dict set spec generator [lrange $ctor 1 end]
         set args [lrange $args 1 end]
       }
       
@@ -304,42 +320,75 @@ namespace eval ::opeg {
     
     :public method postOrder {varName ast script {level 0}} {
       upvar [incr level] $varName var
+      # puts stderr ast=$ast
       set ast [lassign $ast current start end]
       set childrenFlds [list]
       # default to the leaf/literal value?
       foreach c $ast {
         lassign [:postOrder $varName $c $script $level] cFields cArgs
         lappend childrenFlds {*}$cFields
-        lappend targs $cArgs
+        set targs $cArgs
       }
 
       # coalesce fields
 
+      #
+      # TODO: Irgh! merging with escaped (protected) single words ==
+      # singelton lists produces an additional nesting level, each
+      # time, so we have to drop that extra nesting level in a
+      # postprocessing step (dict map)? can this be avoided?
+      #
+
       set flds [dict create]
       if {[llength $childrenFlds]} {
         foreach {f v} $childrenFlds {
-          dict lappend flds $f {*}$v
+          if {[llength $v]==1} {
+            dict lappend flds $f $v
+          } else {
+            dict lappend flds $f {*}$v
+          }
         }
       }
 
-
+      set flds [dict map {k v} $flds {
+        if {[llength $v] == 1} {
+          lindex $v 0
+        } else {
+          set v
+        }
+      }]
+      
       if {![info exists targs]} {
         set targs [string range ${:sourcecode} $start $end]
       }
+      
       lassign $current nt objspec      
 
       if {[string first "_FIELD_" $nt] > -1} {
         set f [lindex [split $nt _] end]
         # dict lappend :fargs -$f $targs
-        dict lappend flds -$f {*}$targs
+        # dict lappend flds -$f {*}$targs
+        # dict lappend flds -$f {*}$targs
+        dict set flds -$f $targs
       }
       
       if {$objspec ne ""} {
         dict with objspec {
+          if {[info exists fields]} {
+            foreach fld $fields {
+              if {[llength $fld] == 2 && [dict exists $flds -[lindex $fld 0]]} {
+                set spec [lindex [lindex $fld 1] 0]; # TODO: handle choices! just one choice expected here!
+                if {[dict exists $spec generator]} {
+                  lappend :fixes [list apply [list {0 root} [dict get $spec generator]] [dict get $flds -[lindex $fld 0]]]
+                  dict unset flds -[lindex $fld 0]
+                }
+              }
+            }
+          }
+          
           if {[info exists generator]} {
             set :current [$generator new {*}$flds]
             set flds [list]
-
           }
         }
       }
@@ -371,6 +420,7 @@ namespace eval ::opeg {
 
     :public method parse {script} {
 
+      unset -nocomplain :symStack; # TODO: relocate
       set ast [:parset $script]
 
       set list {}
@@ -381,20 +431,27 @@ namespace eval ::opeg {
           lappend list $v
         }
       }
-      $factory eval [list unset :sourcecode]
+      $factory eval {unset :sourcecode}
       # return START concept
-      return [lindex $list end]
+      if {[$factory eval {info exists :fixes}]} {
+        puts stderr fixes=[$factory eval {set :fixes}]
+      }
+      
+      return [lindex $list end]; # root
     }
 
     ## si:valuevalue_branch si:valuevoid_branch si:voidvalue_branch si:voidvoid_branch
 
     foreach m [[lindex [:info superclasses] end] info methods -callprotection all *_branch] {
       :method $m {} {
-        set mark [${:mystackmark} peek]
+        # set mark [${:mystackmark} peek]; puts mark(insym)=$mark
+        # set mark [${:mystackmark} size]; puts mark(insym)=$mark
+        set mark [llength ${:symStack}]
+        
         if {![info exists :choices($mark)]} {
           # init
           set :choices($mark) 0
-        } 
+        }
         try {set r [next]} on return {} {return -code return}; # ok
         incr :choices($mark);
         return $r
@@ -402,17 +459,31 @@ namespace eval ::opeg {
     }
 
     ## si:value_leaf_symbol_end si:void_leaf_symbol_end si:value_leaf_symbol_end si:value_clear_symbol_end si:reduce_symbol_end
+    ## [[lindex [:info superclasses] end] info methods -callprotection all *_symbol_end]
+
+    foreach m [[lindex [:info superclasses] end] info methods -callprotection all *_symbol_start] {
+      :method $m {sym} {
+        # push
+        lappend :symStack $sym
+        try {next} on return {} {set :symStack [lrange ${:symStack} 0 end-1]; return -code return}
+      }
+    }
     
     foreach m [[lindex [:info superclasses] end] info methods -callprotection all *_symbol_end] {
       :method $m {sym} {
         # si:value_symbol_start: pushes on AST stack & sets a mark
-        set mark [expr {[${:mystackmark} size]?[${:mystackmark} peek]:0}];
-        # cache key
+        # set mark [expr {[${:mystackmark} size]?[${:mystackmark} peek]:0}];
+        # set mark [llength ${:mystackmark} size]
+
         set k [list [${:mystackloc} peek] $sym]
+        set mark [llength ${:symStack}]
+        set :symStack [lrange ${:symStack} 0 end-1]
+
         next; # deletes the mark
+        
         if {${:myok}} {
           if {[info exists :choices($mark)]} {
-            set idx [expr {[set :choices($mark)]}]
+            set idx [set :choices($mark)]
           } else {
             set idx 0
           }
@@ -423,7 +494,6 @@ namespace eval ::opeg {
             set spec [lindex [dict get $ctors $sym] $idx]
             if {$spec ne ""} {
               set ast [${:mystackast} pop]
-              # puts spec=[dict values $spec]
               # TODO: FIX this here!
               # lset ast 0 1 [concat {*}[dict values $spec]];# $ctor
               lset ast 0 1 $spec
@@ -497,6 +567,7 @@ nx::Class create CalculatorFactory -superclasses ModelFactory {
 #
 
 set builderGen [BuilderGenerator new]
+puts stderr [string index $g 52]
 set builderClass [$builderGen bgen $g [CalculatorFactory new]]
 set builder [$builderClass new]
 
@@ -761,7 +832,7 @@ OPEG Drawing (Drawing)
       Line       <- `Line` 'line' ' '+ DAPOSTROPH label:Str DAPOSTROPH (' '+ points:Point2D)* ' '+ Adj?;
 Adj        <- 'adj' ' '+ DAPOSTROPH adj:Str DAPOSTROPH;
 # paths:
-#      Adj        <- 'adj' ' '+ DAPOSTROPH adj:(`$root lines $current` Str) DAPOSTROPH;
+#      Adj        <- 'adj' ' '+ DAPOSTROPH adj:(`$root {lines $current} points` Str) DAPOSTROPH;
       Str        <- !DAPOSTROPH <alnum>*;
       Point2D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
 void:      DAPOSTROPH    <- '\"' ;
@@ -789,9 +860,62 @@ lassign $lines l1 l2
 ? {$l2 cget -adj} "Flamingo"
 ? {llength [$l2 cget -points]} 2
 
-## TODOS:
+## TODOS (DONE):
 ## - fix value passing for quoted, braced values ... too many nesting levels
-## - add support for lazily acquired references/paths for fields --> adj:(`$root lines $current` Str)
+
+nx::Class create C {
+  :property p1
+}
+
+set bGram {OPEG MyPEG (D)
+          D <- `C` p1:E;
+  leaf:   E <- '\"' <alnum>+ '\"';
+END;
+}
+
+set b [[$builderGen bgen $bGram] new]
+
+set out [$b parse {"abc"}]
+
+? {$out info class} ::C
+? {$out cget -p1} {"abc"}
+
+##
+## TODOS: Fix choice propagation
+##
+
+nx::Class create XX {
+  :property p1
+}
+
+nx::Class create YY {
+  :property p2
+}
+
+
+set pathGr {OPEG MyPEG (D)
+       D <- `XX` p1:A / `YY` p2:B;
+leaf:  A <-  'A' <digit>+;
+leaf:  B <-  'B' <digit>+;
+END;
+}
+
+# puts [$builderGen print $pathGr]
+
+set d [[$builderGen bgen $pathGr] new]
+
+? {[$d parse {B1}] info class} ::YY
+? {[$d parse {A1}] info class} ::XX
+
+## TODO: choice propagation for field paths?
+
+set pathGr {OPEG MyPEG (D)
+       D <- `XX` p1:(`$root p2 $0` A) / `YY` p2:(`$root p1 $0` B);
+leaf:  A <-  'A' <digit>+;
+leaf:  B <-  'B' <digit>+;
+END;
+}
+
 
 ## 5) -> Sanity checks at all steps
 
