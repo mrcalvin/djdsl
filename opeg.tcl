@@ -375,8 +375,6 @@ namespace eval ::opeg {
           dict set flds -$f $targs
         }
 
-        
-        # TODO register as fix callback on $:{current} + field -$f + value $targs
       } else {
       
         if {$objspec ne ""} {
@@ -414,6 +412,21 @@ namespace eval ::opeg {
       return [list [list $flds $fixes] $v]
       
     }
+
+    :public method wireUp {cmds} {
+      set changed [llength $cmds]
+      while {$changed} {
+        set later [list]
+        set changed 0
+        foreach cmd $cmds {
+          try $cmd on error {e} {puts stderr 0$e; lappend later $cmd} on ok {} {set changed 1}
+        }
+        set cmds $later
+      }
+      if {[info exists later] && [llength $later]} {
+        return -code error "Unable to run fixes: $later"
+      }
+    }
   }
   
   nx::Class create Builder -superclasses pt::rde::nx {
@@ -431,12 +444,13 @@ namespace eval ::opeg {
         }
       }
       $factory eval {unset :sourcecode}
-      # return START concept
-      # TODO: relocate into factory object
 
       set root [lindex $list end]
-      
+
+      # TODO: relocate into factory object and turn it into a fixup
+      # method as in Enso
       if {[$factory eval {info exists :fixes}]} {
+        # expand fixes into commands
         set fldFixes [$factory eval {set :fixes}]
         foreach {obj fixes} $fldFixes {
           foreach fix $fixes {
@@ -444,9 +458,11 @@ namespace eval ::opeg {
             lassign $path objEl fieldEl valEl
             set lambda "$objEl $fieldEl get $valEl"
             # puts stderr "$obj eval [list apply [list {0 root} $lambda] $val $root]"
-            $obj eval ":configure -$field \[[list apply [list {0 root} $lambda] $val $root]\]"
+            lappend fixCmds [list $obj eval ":configure -$field \[[list apply [list {0 root} $lambda] $val $root]\]"]
           }
         }
+        # evaluate fixCmds
+        $factory wireUp $fixCmds
       }
 
       unset -nocomplain :symStack; # TODO: relocate
@@ -862,7 +878,7 @@ Adj        <- 'adj' ' '+ DAPOSTROPH adj:Str DAPOSTROPH;
 void:      DAPOSTROPH    <- '\"' ;
 END;}
 
-set d {drawing
+set aDraw {drawing
   line "Flamingo" point 1 1 point 2 2 point 20 20 point 21 21 point 3 3 point 4 4 point 22 22 point 23 23 adj "Stork"
   line "Stork" point 1 1 point 10 10 adj "Flamingo"}
 
@@ -870,7 +886,7 @@ set builderGen [BuilderGenerator new]
 set builderClass [$builderGen bgen $geom]
 set diagramBuilder [$builderClass new]
 
-set c [$diagramBuilder parse $d]
+set c [$diagramBuilder parse $aDraw]
 ? {$c info class} ::Drawing
 set lines [$c cget -lines]
 ? {llength $lines} 2
@@ -958,6 +974,55 @@ set d [[$builderGen bgen $pathGr] new]
 ? {[$c1 cget -p1] info name} C1
 
 ## TODO Complete ENSO geom example
+
+nx::Class create Drawing {
+  :property -accessor public lines:0..n,object,type=::Line {
+    :public object method value=get {obj value in:optional} {
+      set lines [next [list $obj $value]]
+      if {[info exists in]} {
+        foreach l $lines {
+          if {[$l cget -label] eq $in} {
+            return $l
+          }
+        }
+      } else {
+        return $lines
+      }
+    }
+  }
+}
+  
+::Line property adj:object,type=::Line
+
+# no paths:
+# Adj        <- 'adj' ' '+ DAPOSTROPH adj:Str DAPOSTROPH;
+# paths:
+
+set geom2 {
+OPEG Drawing (Drawing)
+      Drawing    <- `Drawing` 'drawing' (<space>+ lines:Line)+;
+      Line       <- `Line` 'line' ' '+ DAPOSTROPH label:Str DAPOSTROPH (' '+ points:Point2D)* ' '+ Adj?;
+      Adj        <- 'adj' ' '+ DAPOSTROPH adj:(`$root lines $0` Str) DAPOSTROPH;
+      Str        <- !DAPOSTROPH <alnum>*;
+      Point2D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
+void: DAPOSTROPH    <- '\"' ;
+END;}
+
+set builderClass [$builderGen bgen $geom2]
+set diagramBuilder [$builderClass new]
+
+# puts stderr [time {set c2 [$diagramBuilder parse $aDraw]} 1000]; # ~7ms unoptimized
+
+set c2 [$diagramBuilder parse $aDraw]
+
+? {$c2 info class} ::Drawing
+set lines [$c2 cget -lines]
+? {llength $lines} 2
+lassign $lines l1 l2
+? {$l1 cget -adj} $l2
+? {[$l1 cget -adj] cget -label} [$l2 cget -label]
+? {$l2 cget -adj} $l1
+? {[$l2 cget -adj] cget -label} [$l1 cget -label]
 
 ## TODO: What to-do with non-field values ...
 ## -- allow/disallow? -> What does ENSO do?
