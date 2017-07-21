@@ -158,6 +158,7 @@ namespace eval ::opeg {
       pt::peg::to::tclparam configure -template {@code@}
 
       set body [pt::peg::to::tclparam convert $ser]
+      # puts stderr body=$body
       set cls [[current class]::Class new \
                    -superclasses [namespace current]::Builder \
                    -factory $modelFactory \
@@ -222,15 +223,21 @@ namespace eval ::opeg {
       # {n x} {n Digit} -> n _1_x
 
       #
-      # 3) Are there "fixes" (paths) to consider?
+      # 3) Are there "fixes" (paths) to consider later on? This ressembles the
+      # behavior in "input Definition" -> refactor?
       #
       set f [lindex $field 1]
       if {[info exists :choices]} {
+        # puts stderr choices=${:choices}
         set c [lindex ${:choices} end]
-        lappend f $c
+        # puts stderr c=${:choices}
+        # lappend f $c
+        # puts stderr f=$f
+        dict set :specs $ntIdent $c
+        ## piggyback onto :spec
         unset :choices
       }
-      lappend :fields $f
+      # lappend :fields $f
       
       return [list n $ntIdent]
     }
@@ -250,10 +257,13 @@ namespace eval ::opeg {
       set ctor [lindex $args 0]
       set spec [dict create]
       if {[llength $args] > 1 && [lindex $ctor 0] eq "c"} {
-        dict set spec generator [lrange $ctor 1 end]
+        # TODO: can there be more than one fix at a time? Test: dict
+        # set spec generator [lrange $ctor 1 end]
+        dict set spec generator [lindex $ctor 1]
         set args [lrange $args 1 end]
       }
-      
+
+      # TODO: Remove?
       if {[info exists :fields] && [llength ${:fields}]} {
         dict set spec fields ${:fields}
         unset :fields
@@ -288,45 +298,29 @@ namespace eval ::opeg {
     }
     
   }
-
-        
-      # if {0} {
-      #   if {$objspec ne ""} {
-      #     set fargs ""
-      #     dict with objspec {
-      #       if {[info exists fields] && [llength $fields]} {
-      #         set fargs [join [concat {*}[lmap f $fields v $targs {list -$f $v}]]]
-      #       }
-            
-      #       if {[info exists generator]} {
-      #         if {[info exists :fargs]} {
-      #           set fargs [list {*}${:fargs} {*}$fargs]
-      #           unset :fargs
-      #         }
-      #         puts "FORMULA($nt)=$generator new {*}$fargs"
-      #         set :current [$generator new {*}$fargs]
-      #       } else {
-      #         # store current fields for later evaluation
-      #         lappend :fargs {*}$fargs
-      #         puts "FORMULA($nt)=${:fargs}"
-      #       }
-      #     }
-      #   }
-      # }
-
+  
   nx::Class create ModelFactory {
     
     :variable sourcecode
-    
+
+
+    #
+    # TODO: the flow in postOrder must be consolidated and
+    # streamlined; get rid of smelly LONG METHOD.
+    #
     :public method postOrder {varName ast script {level 0}} {
       upvar [incr level] $varName var
       # puts stderr ast=$ast
       set ast [lassign $ast current start end]
       set childrenFlds [list]
+      set fixes [list]
       # default to the leaf/literal value?
       foreach c $ast {
-        lassign [:postOrder $varName $c $script $level] cFields cArgs
+        lassign [:postOrder $varName $c $script $level] pkg cArgs
+        lassign $pkg cFields cFixes
         lappend childrenFlds {*}$cFields
+        lappend fixes {*}$cFixes
+        # TODO: Should this be [lappend targs {*}$cArgs]? 
         set targs $cArgs
       }
 
@@ -364,31 +358,37 @@ namespace eval ::opeg {
       
       lassign $current nt objspec      
 
+      # TODO: Can one get rid of NT-encoded field name resolution
+      # (some reverse map _FIELD_* -> p1)? This introduces potential
+      # conflicts between O/PEG Identifiers and NX variable/method
+      # names, which are less restricted.
+      
       if {[string first "_FIELD_" $nt] > -1} {
         set f [lindex [split $nt _] end]
         # dict lappend :fargs -$f $targs
         # dict lappend flds -$f {*}$targs
         # dict lappend flds -$f {*}$targs
-        dict set flds -$f $targs
-      }
+
+        if {$objspec ne ""} {
+          lappend fixes [list $f [dict get $objspec generator] $targs]
+        } else {
+          dict set flds -$f $targs
+        }
+
+        
+        # TODO register as fix callback on $:{current} + field -$f + value $targs
+      } else {
       
-      if {$objspec ne ""} {
-        dict with objspec {
-          if {[info exists fields]} {
-            foreach fld $fields {
-              if {[llength $fld] == 2 && [dict exists $flds -[lindex $fld 0]]} {
-                set spec [lindex [lindex $fld 1] 0]; # TODO: handle choices! just one choice expected here!
-                if {[dict exists $spec generator]} {
-                  lappend :fixes [list apply [list {0 root} [dict get $spec generator]] [dict get $flds -[lindex $fld 0]]]
-                  dict unset flds -[lindex $fld 0]
-                }
+        if {$objspec ne ""} {
+          dict with objspec {      
+            if {[info exists generator]} {
+              set :current [$generator new {*}$flds]
+              set flds [list]
+              if {[llength $fixes]} {
+                lappend :fixes ${:current} $fixes
+                set fixes [list]
               }
             }
-          }
-          
-          if {[info exists generator]} {
-            set :current [$generator new {*}$flds]
-            set flds [list]
           }
         }
       }
@@ -411,7 +411,7 @@ namespace eval ::opeg {
 
       set var $v
       uplevel $level $script
-      return [list $flds $v]
+      return [list [list $flds $fixes] $v]
       
     }
   }
@@ -420,7 +420,6 @@ namespace eval ::opeg {
 
     :public method parse {script} {
 
-      unset -nocomplain :symStack; # TODO: relocate
       set ast [:parset $script]
 
       set list {}
@@ -433,13 +432,31 @@ namespace eval ::opeg {
       }
       $factory eval {unset :sourcecode}
       # return START concept
-      if {[$factory eval {info exists :fixes}]} {
-        puts stderr fixes=[$factory eval {set :fixes}]
-      }
+      # TODO: relocate into factory object
+
+      set root [lindex $list end]
       
-      return [lindex $list end]; # root
+      if {[$factory eval {info exists :fixes}]} {
+        set fldFixes [$factory eval {set :fixes}]
+        foreach {obj fixes} $fldFixes {
+          foreach fix $fixes {
+            lassign $fix field path val
+            lassign $path objEl fieldEl valEl
+            set lambda "$objEl $fieldEl get $valEl"
+            # puts stderr "$obj eval [list apply [list {0 root} $lambda] $val $root]"
+            $obj eval ":configure -$field \[[list apply [list {0 root} $lambda] $val $root]\]"
+          }
+        }
+      }
+
+      unset -nocomplain :symStack; # TODO: relocate
+      array unset -nocomplain :choices; # TODO: relocate
+      $factory eval {unset -nocomplain :fixes}; # TODO: relocate
+      
+      return $root; # root
     }
 
+    # TODO: make the symStack thingie more elegant.
     ## si:valuevalue_branch si:valuevoid_branch si:voidvalue_branch si:voidvoid_branch
 
     foreach m [[lindex [:info superclasses] end] info methods -callprotection all *_branch] {
@@ -453,7 +470,7 @@ namespace eval ::opeg {
           set :choices($mark) 0
         }
         try {set r [next]} on return {} {return -code return}; # ok
-        incr :choices($mark);
+        incr :choices($mark); # puts stderr BUMP([lindex ${:symStack} end],$mark)
         return $r
       }
     }
@@ -465,6 +482,7 @@ namespace eval ::opeg {
       :method $m {sym} {
         # push
         lappend :symStack $sym
+        # puts stderr START([self],$sym),[llength ${:symStack}]
         try {next} on return {} {set :symStack [lrange ${:symStack} 0 end-1]; return -code return}
       }
     }
@@ -478,18 +496,23 @@ namespace eval ::opeg {
         set k [list [${:mystackloc} peek] $sym]
         set mark [llength ${:symStack}]
         set :symStack [lrange ${:symStack} 0 end-1]
-
+        # puts stderr END($sym),$mark
         next; # deletes the mark
-        
+
+        # puts stderr C($sym)=[array get :choices]
         if {${:myok}} {
           if {[info exists :choices($mark)]} {
             set idx [set :choices($mark)]
           } else {
             set idx 0
           }
-          unset -nocomplain :choices($mark)
+          # unset -nocomplain :choices($mark)
           # inject the ctor
           set ctors [[[:info class] generator get] eval {set :specs}]
+          # if {[string match _FIELD_* $sym]} {
+          #   puts stderr "---FIELD($sym),$idx,$ctors"
+          # }
+
           if {[dict exists $ctors $sym]} {
             set spec [lindex [dict get $ctors $sym] $idx]
             if {$spec ne ""} {
@@ -506,6 +529,7 @@ namespace eval ::opeg {
             }
           }
         }
+        unset -nocomplain :choices($mark)
       }
     }
   }; # Builder
@@ -577,7 +601,7 @@ set builder [$builderClass new]
 # the domain model directly.
 #
 
-$builder print {1+2}
+# $builder print {1+2}
 set rObj [$builder parse {1+2}]
 
 ? {$rObj info class} ::Binary
@@ -621,7 +645,7 @@ END;}
 
 
 set coordParser [[pt::rde::nx pgen $g1] new]
-$coordParser print {(11,22)}
+# $coordParser print {(11,22)}
 puts stderr [$coordParser parset {(11,22)}]
 
 
@@ -654,7 +678,7 @@ set builderClass [$builderGen bgen $g2a]
 set coordBuilder [$builderClass new]
 
 ? {[$coordBuilder parse {(11,2)}] info class} ::Point
-$coordBuilder print {(1,2)}
+# $coordBuilder print {(1,2)}
 ? {[$coordBuilder parse {(3,4)}] cget -y} 4
 
 
@@ -674,7 +698,7 @@ set builderClass [$builderGen bgen $g2b]
 # $builderGen print $g2b
 set coordBuilder [$builderClass new]
 
-$coordBuilder print {(1,2)}
+# $coordBuilder print {(1,2)}
 ? {[$coordBuilder parse {(1,2)}] info class} ::Point
 ? {[$coordBuilder parse {(3,4)}] cget -y} 4
 
@@ -690,7 +714,7 @@ END;}
 set builderClass [$builderGen bgen $g2c]
 set coordBuilder [$builderClass new]
 
-$coordBuilder print {(1,2)}
+# $coordBuilder print {(1,2)}
 ? {[$coordBuilder parse {(1,2)}] info class} ::Point
 ? {[$coordBuilder parse {(3,4)}] cget -y} 4
 
@@ -718,7 +742,7 @@ OPEG Coordinate (P)
 END;}
 
 # puts stderr [string index $g3 41]
-$builderGen print $g3
+# $builderGen print $g3
 set builderClass [$builderGen bgen $g3]
 set coordBuilder [$builderClass new]
 
@@ -728,7 +752,7 @@ nx::Class create HyperPoint {
   :property y:integer
 }
 
-$coordBuilder print {(92,32)}; #$coordBuilder print {(987,2)}
+# $coordBuilder print {(92,32)}; #$coordBuilder print {(987,2)}
 set p [$coordBuilder parse {(92,32)}]; #set p [$coordBuilder parse {(987,2)}]
 ? {$p info class} ::HyperPoint
 ? {$p cget -x} "9 2 3";
@@ -748,7 +772,7 @@ OPEG CallDecl (C)
       Exp  <- <digit>;
 END;}
 
-$builderGen print $g4
+# $builderGen print $g4
 set builderClass [$builderGen bgen $g4]
 set callBuilder [$builderClass new]
 
@@ -773,7 +797,7 @@ OPEG CallDecl (C)
       Exp  <- <digit>;
 END;}
 
-$builderGen print $g5
+# $builderGen print $g5
 set builderClass [$builderGen bgen $g5]
 set callBuilder [$builderClass new]
 
@@ -792,7 +816,7 @@ OPEG CallDecl (C)
       Exp  <- <digit>;
 END;}
 
-$builderGen print $g6
+# $builderGen print $g6
 set builderClass [$builderGen bgen $g6]
 set callBuilder [$builderClass new]
 
@@ -884,17 +908,25 @@ set out [$b parse {"abc"}]
 ## TODOS: Fix choice propagation
 ##
 
-nx::Class create XX {
+nx::Class create Base {
+  :property -accessor public p0 {
+    :public object method value=get {obj prop in} {
+      return [nx::Object create [$obj info class]::$in]
+    }
+  }
+}
+
+nx::Class create XX -superclasses Base {
   :property p1
 }
 
-nx::Class create YY {
+nx::Class create YY -superclasses Base {
   :property p2
 }
 
 
 set pathGr {OPEG MyPEG (D)
-       D <- `XX` p1:A / `YY` p2:B;
+       D <- `XX` p1:A / `YY` p2:B; # TODO: top-level expression nesting is not supported (flattening): ((`XX` p1:A / `YY` p2:B))
 leaf:  A <-  'A' <digit>+;
 leaf:  B <-  'B' <digit>+;
 END;
@@ -910,12 +942,27 @@ set d [[$builderGen bgen $pathGr] new]
 ## TODO: choice propagation for field paths?
 
 set pathGr {OPEG MyPEG (D)
-       D <- `XX` p1:(`$root p2 $0` A) / `YY` p2:(`$root p1 $0` B);
-leaf:  A <-  'A' <digit>+;
-leaf:  B <-  'B' <digit>+;
-END;
-}
+         D <- '1' / `XX` p1:(`$root p0 $0` A / '0' / `$root p0 $0` C) / '3' / `YY` p2:(`$root p0 $0` B);
+  leaf:  A <-  'A' <digit>+;
+  leaf:  B <-  'B' <digit>+;
+  leaf:  C <-  'C' <digit>+;
+  END;}
 
+set d [[$builderGen bgen $pathGr] new]
+
+? {[set b1 [$d parse {B1}]] info class} ::YY
+? {[$b1 cget -p2] info name} B1
+? {[set a1 [$d parse {A1}]] info class} ::XX
+? {[$a1 cget -p1] info name} A1
+? {[set c1 [$d parse {C1}]] info class} ::XX
+? {[$c1 cget -p1] info name} C1
+
+## TODO Complete ENSO geom example
+
+## TODO: What to-do with non-field values ...
+## -- allow/disallow? -> What does ENSO do?
+## -- Inject into "mapping" operations post-object construction?
+## -- ...
 
 ## 5) -> Sanity checks at all steps
 
