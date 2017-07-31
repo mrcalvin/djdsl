@@ -455,9 +455,17 @@ namespace eval ::opeg {
         foreach {obj fixes} $fldFixes {
           foreach fix $fixes {
             lassign $fix field path val
-            lassign $path objEl fieldEl valEl
-            set lambda "$objEl $fieldEl get $valEl"
-            # puts stderr "$obj eval [list apply [list {0 root} $lambda] $val $root]"
+            if {[llength $path] > 1} {
+              lassign $path objEl fieldEl valEl
+              set lambda "$objEl $fieldEl get $valEl"
+            } else {
+              #
+              # TODO: This is clearly disproportionate: Can be set
+              # eagerly, and does not require apply call etc. Fix when
+              # appropriate.
+              #
+              set lambda "return $path"
+            }
             lappend fixCmds [list $obj eval ":configure -$field \[[list apply [list {0 root} $lambda] $val $root]\]"]
           }
         }
@@ -1024,10 +1032,57 @@ lassign $lines l1 l2
 ? {$l2 cget -adj} $l1
 ? {[$l2 cget -adj] cget -label} [$l1 cget -label]
 
-## TODO: What to-do with non-field values ...
-## -- allow/disallow? -> What does ENSO do?
-## -- Inject into "mapping" operations post-object construction?
-## -- ...
+##
+## TODO: boolean assignments based on simple token structures? -->
+## predicates needed? IMO, not really, we need to be more pretentious
+## on the path/knit expressions, though.
+##
+
+nx::Class create Bool {
+  :property value:boolean
+}
+
+set boolGram {OPEG MyPEG (B)
+          B <- `Bool` value:('true' / 'false');
+END;
+}
+
+set b [[$builderGen bgen $boolGram] new]
+
+set out [$b parse {true}]
+? {$out info class} ::Bool
+? {$out cget -value} "true"
+? {string is boolean [$out cget -value]} 1
+
+set out [$b parse {false}]
+? {$out info class} ::Bool
+? {string is boolean [$out cget -value]} 1
+
+set boolGram {OPEG MyPEG (B)
+          B <- `Bool` value:('true' / 'false');
+END;}
+
+set boolGram {OPEG MyPEG (B)
+          B <- `Bool` value:(`true` '#' / `false` '##');
+END;}
+
+set b [[$builderGen bgen $boolGram] new]
+
+set out [$b parse {#}]
+? {$out info class} ::Bool
+? {$out cget -value} "true"
+? {string is boolean [$out cget -value]} 1
+
+set out [$b parse {##}]
+? {$out info class} ::Bool
+? {string is boolean [$out cget -value]} 1
+
+## TODO: What to do with non-fields in Sequences?
+## -- What does ENSO do: ENSO has field-only sequences?
+## ... Should we disallow also?
+## ... Is that a case-in-point for mappings? Inject into "mapping"
+## operations post-object construction?
+
 
 ## 5) -> Sanity checks at all steps
 
