@@ -301,8 +301,7 @@ namespace eval ::opeg {
   
   nx::Class create ModelFactory {
     
-    :variable sourcecode
-
+    :variable sourcecode 
 
     #
     # TODO: the flow in postOrder must be consolidated and
@@ -314,14 +313,27 @@ namespace eval ::opeg {
       set ast [lassign $ast current start end]
       set childrenFlds [list]
       set fixes [list]
-      # default to the leaf/literal value?
-      foreach c $ast {
-        lassign [:postOrder $varName $c $script $level] pkg cArgs
-        lassign $pkg cFields cFixes
-        lappend childrenFlds {*}$cFields
-        lappend fixes {*}$cFixes
-        # TODO: Should this be [lappend targs {*}$cArgs]? 
-        set targs $cArgs
+      if {[llength $ast]} {
+        foreach c $ast {
+          set kidz [:postOrder $varName $c $script $level]
+          lassign $kidz pkg cArgs
+          lassign $pkg cFields cFixes
+          lappend childrenFlds {*}$cFields
+          lappend fixes {*}$cFixes
+          if {[llength $cArgs]==1} {
+            lappend targs $cArgs
+          } else {
+            lappend targs {*}$cArgs
+          }
+        }
+
+        # TODO: Is this really necessary? Only run loop when c > 1?
+        if {[llength $targs] == 1} {
+          set targs [lindex $targs 0]
+        }
+        
+      } else {
+        set targs [string range ${:sourcecode} $start $end]
       }
 
       # coalesce fields
@@ -351,12 +363,14 @@ namespace eval ::opeg {
           set v
         }
       }]
+
+      # if {![info exists targs]} {
+      #   set targs [string range ${:sourcecode} $start $end]
+      # } else {
+      # }
       
-      if {![info exists targs]} {
-        set targs [string range ${:sourcecode} $start $end]
-      }
+      lassign $current nt objspec
       
-      lassign $current nt objspec      
 
       # TODO: Can one get rid of NT-encoded field name resolution
       # (some reverse map _FIELD_* -> p1)? This introduces potential
@@ -395,17 +409,14 @@ namespace eval ::opeg {
       
       if {[:info lookup method "input $nt"] ne ""} {
         set v [: input $nt $start $end {*}$targs]
-      }
-      
-      if {[info exists :current]} {
+      } elseif {[info exists :current]} {
         set v ${:current}
-        unset :current
-      }
-      
-      if {$v eq ""} {
+      } else {
         # error "Either an objspec or a mapping method must be provided for non-terminal '$nt'."
         set v $targs
       }
+      unset -nocomplain :current
+
 
       set var $v
       uplevel $level $script
@@ -928,6 +939,22 @@ set out [$b parse {"abc"}]
 ? {$out info class} ::C
 ? {$out cget -p1} {"abc"}
 
+set b [[$builderGen bgen "
+  OPEG MyPEG (D)
+          D <- `C` p1:E (<space>+ E)+;
+  leaf:   E <- '\"' (<alnum> / '\{' / '\}')+ '\"';
+END;
+"] new]
+
+set x \{}c
+
+? {string is list $x} 0
+
+set out [$b parse "\"$x\" \"{}xz\""]
+
+? {$out info class} ::C
+? {$out cget -p1} "\"$x\""
+
 ##
 ## TODOS: Fix choice propagation
 ##
@@ -1068,13 +1095,13 @@ END;}
 
 set b [[$builderGen bgen $boolGram] new]
 
+set out [$b parse {##}]
+? {$out info class} ::Bool
+? {string is boolean [$out cget -value]} 1
+
 set out [$b parse {#}]
 ? {$out info class} ::Bool
 ? {$out cget -value} "true"
-? {string is boolean [$out cget -value]} 1
-
-set out [$b parse {##}]
-? {$out info class} ::Bool
 ? {string is boolean [$out cget -value]} 1
 
 ## TODO: What to do with non-fields in Sequences?
@@ -1083,8 +1110,35 @@ set out [$b parse {##}]
 ## ... Is that a case-in-point for mappings? Inject into "mapping"
 ## operations post-object construction?
 
+nx::Class create BooleanFactory -superclasses ModelFactory {
+  :public method "input B" {startIdx endIdx args} {
+    if {[info exists :current]} {
+      return ${:current}
+    } else {
+      return [Bool new -value [expr {[lindex $args 0] > [lindex $args 1]}]]
+    }
+  }
+}
 
-## 5) -> Sanity checks at all steps
+set nf [[$builderGen bgen {
+  OPEG MyPEG (B)
+        # TODO: Maybe allow for writing `Bool` value:(`$0 > $1` Digit ' '+ Digit)?
+        B    <- `Bool` value:('true' / 'false') / Digit ' '+ Digit;
+        Digit  <- <digit>+;
+  END;
+} [BooleanFactory new]] new]
+
+set out [$nf parse {true}]
+? {$out info class} ::Bool
+? {$out cget -value} "true"
+set out [$nf parse {20 30}]
+? {$out info class} ::Bool
+? {$out cget -value} "0"
+set out [$nf parse {30 20}]
+? {$out info class} ::Bool
+? {$out cget -value} "1"
+
+## 5) -> Sanity checks at all steps (OPEG validate)?
 
 # Local variables:
 #    mode: tcl
