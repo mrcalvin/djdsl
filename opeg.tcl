@@ -35,6 +35,7 @@ namespace eval ::pt::rde {
       pt::peg::to::tclparam configure -template {@code@}
       # puts stderr ser=$ser
       set body [pt::peg::to::tclparam convert $ser]
+      # puts BODY=$body
       set cls [nx::Class new -superclasses [self] -- $body]
       return $cls
     }
@@ -105,9 +106,9 @@ namespace eval ::opeg {
 
     :public method walk {ast} {
       # TODO: this fails by not building up the [next] chain, why?
-      # :input {*}$ast
+      :input {*}$ast
       # puts stderr AST=$ast
-      : input {*}$ast
+      # : input {*}$ast
     }
 
   }
@@ -348,7 +349,7 @@ namespace eval ::opeg {
       set flds [dict create]
       if {[llength $childrenFlds]} {
         foreach {f v} $childrenFlds {
-          if {[llength $v]==1} {
+          if {![string is list $v] || [llength $v]==1} {
             dict lappend flds $f $v
           } else {
             dict lappend flds $f {*}$v
@@ -408,7 +409,7 @@ namespace eval ::opeg {
       set v ""
       
       if {[:info lookup method "input $nt"] ne ""} {
-        set v [: input $nt $start $end {*}$targs]
+        set v [:input $nt $start $end {*}$targs]
       } elseif {[info exists :current]} {
         set v ${:current}
       } else {
@@ -504,7 +505,9 @@ namespace eval ::opeg {
           # init
           set :choices($mark) 0
         }
-        try {set r [next]} on return {} {return -code return}; # ok
+        try {set r [next]} on return {} {
+          return -code return
+        }; # ok
         incr :choices($mark); # puts stderr BUMP([lindex ${:symStack} end],$mark)
         return $r
       }
@@ -517,7 +520,7 @@ namespace eval ::opeg {
       :method $m {sym} {
         # push
         lappend :symStack $sym
-        # puts stderr START([self],$sym),[llength ${:symStack}]
+        # puts stderr START([self],$sym)
         try {next} on return {} {set :symStack [lrange ${:symStack} 0 end-1]; return -code return}
       }
     }
@@ -531,7 +534,7 @@ namespace eval ::opeg {
         set k [list [${:mystackloc} peek] $sym]
         set mark [llength ${:symStack}]
         set :symStack [lrange ${:symStack} 0 end-1]
-        # puts stderr END($sym),$mark
+        # puts stderr END($sym)
         next; # deletes the mark
 
         # puts stderr C($sym)=[array get :choices]
@@ -1138,7 +1141,149 @@ set out [$nf parse {30 20}]
 ? {$out info class} ::Bool
 ? {$out cget -value} "1"
 
+## TODO next: Merge scenario:
+## 2D Points, 3D Points, grammar + language model, plus feature model?
+
+nx::Class create Point2D {
+  :public method equal {anotherPoint} {
+    return [expr {${:x} == [$anotherPoint x get] && ${:y} == [$anotherPoint y get]}]
+  }
+}
+
+nx::Class create Point3D -superclasses Point2D {
+  :property -accessor public z:integer
+  :public method equal {anotherPoint} {
+    return [expr {[next] && ${:z} == [$anotherPoint z get]}]
+  }
+}
+
+set geom2 {
+OPEG Drawing (Drawing)
+      Drawing    <- `Drawing` 'drawing' (<space>+ lines:Line)+;
+      Line       <- `Line` 'line' ' '+ DAPOSTROPH label:Str DAPOSTROPH (' '+ points:Point2D)* ' '+ Adj?;
+      Adj        <- 'adj' ' '+ DAPOSTROPH adj:(`$root lines $0` Str) DAPOSTROPH;
+      Str        <- !DAPOSTROPH <alnum>*;
+      Point2D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
+void: DAPOSTROPH    <- '\"' ;
+END;}
+
 ## 5) -> Sanity checks at all steps (OPEG validate)?
+
+## 6) pattern matching for testing:
+
+if {0} {
+  [Pattern new {Dict {
+    a {Bool -value true}
+    b {Bool -value false}
+  }}] match $out
+}
+
+##
+## Error detection and reporting; feat. Tiny example from:
+##
+## Maidl, A. M., Mascarenhas, F., & Ierusalimschy,
+## R. (2013). Exception Handling for Error Reporting in Parsing
+## Expression Grammars. In: Proc. 17th Brazilian Symposium
+## Programming Languages (SBLP 2013) (pp. 1--15). Springer.
+##
+
+set fh [open [file join [file dirname [info script]] "tiny.peg"] r]
+set tiny [read $fh]
+catch {close $fh}
+
+## minimal FFP support
+
+nx::Class create FFP {
+  :property -accessor public {ffp:substdefault {[list]}}
+  
+  # FFP: available on [complete]
+  :public method complete {} {
+    # puts FFP=${:ffp}
+    next
+  }
+
+  # FFP: actual FFP recording in the spirit of "i_error_pop_merge",
+  # without popping, naturally. At this point, "myerror", if
+  # available, carries a previously popped error-stack element.
+  :method updateFFP {} {
+    if {![info exists :ffp] || ![llength ${:ffp}]} {
+      set :ffp ${:myerror}; return
+    }
+    
+    if {![llength ${:myerror}]} {
+      return
+    }
+    
+    lassign ${:myerror} currentErrPos currentErrMsg
+    lassign ${:ffp} prevFfpPos prevFfpMsg
+    
+    if {$prevFfpPos > $currentErrPos} { return; }
+    if {$currentErrPos > $prevFfpPos} {
+      set :ffp ${:myerror}
+    }
+    # Equal locations, merge the message lists
+    set :ffp [list $currentErrPos [lsort -uniq [list {*}$prevFfpMsg {*}$currentErrMsg]]]
+  }
+
+  # Instrumentation (1): end-of-choice
+  
+  foreach m {si:void_state_merge si:value_state_merge} {
+    :method $m {} {
+      :updateFFP
+      next      
+    }
+  }
+  
+  # Instrumentation (2): mid-of-choice
+  foreach m {si:valuevoid_branch si:valuevalue_branch si:voidvoid_branch si:voidvalue_branch} {
+    :method $m {} {
+      try {set r [next]} on return {} {
+        # caught a backtracking return, update ffp
+        :updateFFP 
+        return -code return
+      }
+      return $r
+    }
+  }
+}
+
+
+set builderGen [BuilderGenerator new]
+set builderClass [$builderGen bgen $tiny]
+set tinyParser [$builderClass new]
+
+
+set p {n := 1;}
+? {lassign [$tinyParser parset $p] _ start end; set end} [expr {[string length $p]-1}]; # fully consumed?
+
+set tinyProg {
+  n := 5;
+  f := 1;
+  repeat
+    f := f * n;
+    n := n - 1
+  until n < 1;
+  write f;
+}
+
+$builderClass mixins add FFP
+
+try {
+  lassign [$tinyParser parset $tinyProg] root start end
+} on error {e} {
+  # with EOI in Tiny grammar
+  lassign $e _ loc
+  ? {set loc} 23; # points to repeat
+  ? {lindex [$tinyParser ffp get] 0} 63;  # points to begin of u(ntil).
+} on ok {r} {
+  # TODO: complete, cases without EOI
+  # prefix
+  ? {string range $tinyProg $start $end} $tinyProg
+  # suffix
+  ? {string range $tinyProg [expr {$end+1}] [string length $tinyProg]} ""
+} finally {
+  $tinyParser destroy
+}
 
 # Local variables:
 #    mode: tcl
