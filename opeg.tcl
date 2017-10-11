@@ -1292,11 +1292,8 @@ $builderClass mixins delete FFP
 #
 
 
-pt::rde::nx public method cswitch {parentParser instr:optional} {
+pt::rde::nx public method cswitch {parentParser {instr MAIN}} {
 
-  if {![info exists instr]} {
-    set instr sym_[namespace tail [self]]
-  }
   # puts "SWITCH: $parentParser -($instr)-> [self]"
   # puts STACKPARENT=[$parentParser eval "\${:mystackast} size"]
   :reset {}
