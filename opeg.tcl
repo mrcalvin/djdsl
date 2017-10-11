@@ -431,7 +431,7 @@ namespace eval ::opeg {
         set later [list]
         set changed 0
         foreach cmd $cmds {
-          try $cmd on error {e} {puts stderr 0$e; lappend later $cmd} on ok {} {set changed 1}
+          try $cmd on error {e} {lappend later $cmd} on ok {} {set changed 1}
         }
         set cmds $later
       }
@@ -1284,6 +1284,189 @@ try {
 } finally {
   $tinyParser destroy
 }
+
+$builderClass mixins delete FFP
+
+#
+# Minimal combination support for NX/PARAM parsers (parser combinators)
+#
+
+
+pt::rde::nx public method cswitch {parentParser instr:optional} {
+
+  if {![info exists instr]} {
+    set instr sym_[namespace tail [self]]
+  }
+  # puts "SWITCH: $parentParser -($instr)-> [self]"
+  # puts STACKPARENT=[$parentParser eval "\${:mystackast} size"]
+  :reset {}
+  ## dump current parsing state in sub-parser
+  set myloc [$parentParser eval {:location}]
+
+  incr myloc
+  set mtoken [$parentParser eval {set :mytoken}]
+
+  if {$myloc >= [string length $mtoken]} {
+    $parentParser eval {set :myok 0}
+    # set myerror [list $myloc [list [list t $tok]]]
+    return
+  }
+
+  set dat [string range $mtoken $myloc end]
+
+  :data $dat
+  #puts myloc=$myloc,dat=$dat
+
+
+  # TODO: needed?
+  # $parentParser eval "\${:mystackloc} push ${:myloc}"
+  
+  : $instr
+
+  $parentParser eval [list set :myok ${:myok}]
+  
+  if {${:myok}} {
+    set subAst [:complete]
+    lassign $subAst nt start end
+    # puts subAst=$myloc,${:myloc},$end,$subAst
+    # TODO: in nested sub ASTs, all range markers must be bumped!
+    set subAst [list $nt $myloc [expr {$myloc + $end}]]
+    $parentParser eval "\${:mystackast} push [list $subAst]"
+    $parentParser eval [list set :myloc [expr {$myloc + $end}]]
+  } else {
+    #
+    # TODO: fix loc on error (in the error report and for the pparser)
+    #
+    set parentErr [$parentParser eval {set :myerror}]
+    lassign $parentErr oldPos oldMsg
+    lassign ${:myerror} newPos newMsg
+    set newLoc [expr {$myloc + $newPos}]
+    
+    if {$oldPos > $newLoc} {
+      return
+    }
+    if {$newLoc > $oldPos} {
+      set msg $newMsg
+    } else {
+      set msg [list {*}$oldMsg {*}$newMsg]
+    }
+    
+    $parentParser eval [list set :myerror [list $newLoc $msg]]
+    $parentParser eval [list set :myloc $newLoc]
+  }
+
+}
+
+set digit [[pt::rde::nx pgen {PEG DIGIT (digit) digit <- [0-9]; END;}] new]
+set letter [[pt::rde::nx pgen {PEG LETTER (letter) letter <- [a-z] / [A-Z]; END;}] new]
+
+? {$digit parset {1}} {digit 0 0}
+? {$letter parset {a}} {letter 0 0}
+
+set identifier [[pt::rde::nx pgen {PEG ID (id) digit <- .; letter <- .; id <- letter (letter / digit)*; END;}] new]
+
+
+
+? {$identifier parset {1}} {id 0 0 {letter 0 0}}
+
+$identifier object forward sym_letter $letter cswitch %self %method
+$identifier object forward sym_digit $digit cswitch %self %method
+
+# debug on pt/rdengine
+? {$identifier parset {a}} {id 0 0 {letter 0 0}}
+? {$identifier parset {1}} {pt::rde 0 {{cl abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ}}}
+? {$identifier parset {abc}} {id 0 2 {letter 0 0} {letter 1 1} {letter 2 2}}
+? {$identifier parset {a1}} {id 0 1 {letter 0 0} {digit 1 1}}
+# debug off pt/rdengine
+
+set dletters [[pt::rde::nx pgen {PEG LETTER (dletters) dletters <- [a-z][a-z] / [A-Z][A-Z]; END;}] new]
+set identifier2 [[pt::rde::nx pgen {PEG ID2 (id) digit <- .; dletters <- .; id <- dletters (dletters / digit)*; END;}] new]
+$identifier2 object forward sym_dletters $dletters cswitch %self %method
+$identifier2 object forward sym_digit $digit cswitch %self %method
+? {$identifier2 parset {aabb1}} {id 0 4 {dletters 0 1} {dletters 2 3} {digit 4 4}}
+? {$identifier2 parset {aab11}} {id 0 1 {dletters 0 1}}; # partial parse
+$identifier2 object mixins add FFP
+? {$identifier2 parset {aab11}} {id 0 1 {dletters 0 1}}; # partial parse + FFP
+$identifier2 object mixins delete FFP
+
+## pt_peg_to_tclparam.tcl
+proc ::pt::peg::to::tclparam::Op::n {modes symbol} {
+    # symbol mode determines AST generation
+    # void       => non-generative,
+    # leaf/value => generative.
+
+    Asm::Start
+    Asm::ReTerminal n $symbol
+
+    # TODO: limit to Parser instances, allow for late binding (cyclic
+    # relationships in the nested parser structure).
+    if {[::nsf::is object $symbol]} {
+      Asm::GenAST [list gen 1]; # TODO: get this from parser obj
+      Asm::Direct {
+        # TODO: collect the needed parent infos here, or use a
+        # redirector on the parent.
+        Asm::Tcl $symbol cswitch \[self\]
+      }
+    } else {
+      if {![dict exists $modes $symbol]} {
+        # Incomplete grammar. The symbol has no definition.
+        Asm::Direct {
+          Asm::Ins i_status_fail "; # Undefined symbol '$symbol'"
+        }
+      } else {
+        Asm::GenAST [list gen [expr { [dict get $modes $symbol] ne "void" }]]
+        Asm::Direct {
+          Asm::Self sym_$symbol
+        }
+      }
+    }
+    Asm::Done
+}
+
+# set letter [[pt::rde::nx pgen {[a-z] / [A-Z]}] new]
+
+
+[pt::rde::nx pgen {PEG DIGIT (digit) digit <- [0-9]; END;}] create ::digit
+[pt::rde::nx pgen {PEG LETTER (letter) letter <- [a-z] / [A-Z]; END;}] create ::letter
+
+
+set identifier [[[BuilderGenerator new] bgen "OPEG ID (id) id <- ::letter (::letter / ::digit)*; END;"] new]
+
+? {$identifier parset {a}} {id 0 0 {letter 0 0}}
+? {$identifier parset {1}} {pt::rde 0 {{cl abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ}}}
+? {$identifier parset {abc}} {id 0 2 {letter 0 0} {letter 1 1} {letter 2 2}}
+? {$identifier parset {a1}} {id 0 1 {letter 0 0} {digit 1 1}}
+
+## TODOS:
+##
+## 1) Parser-based builder interface (parser combination)
+##
+## 2) Implement parser-as-symbol in the intermediate (canonical) PEG
+## representation: method-call frontend to intermediate PEG.
+##
+## 3) fix debug support in NX engine class (use apply wrapper to set
+## the namespace context correctly)
+##
+## 4) minimize pgen/bgen interface (default to some HEADER etc.)
+##
+## 5) fit object generators into builder interface
+##
+
+exit
+
+
+## letter (letter / digit letter / digit )*
+set identifier [$letter , {{{{$letter : p1} / {$digit $letter} / $digit} *}}]
+set identifier [$letter , [[$letter / [$digit , $letter] / $digit] *] , $letter]
+set identifier [$letter , [[$letter / [$digit , $letter] / $digit] *] , {[0-9]+ / 'aaa'} : p2]
+
+$letter , 
+set identifier [then $letter then $letter then choice $letter $digit]
+set identifier [$letter then $letter choice ]
+
+# package req nx::serializer; this stumbles over the TclOO alien :(
+# puts identifier=[$identifier serialize]
+
 
 # Local variables:
 #    mode: tcl
