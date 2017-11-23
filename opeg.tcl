@@ -151,7 +151,7 @@ namespace eval ::opeg {
       # 2) Downshape OPEG "AST" into serial PEG "AST"
       set ser [:rewrite $opegAst $opegScript]
       # 3) Generate PEG+ parser bundle
-
+      puts ser=$ser
       ## initialize to NX/PEG backend defaults or dummies
       pt::tclparam::configuration::nx def _ _ _  {pt::peg::to::tclparam configure}
       
@@ -1440,6 +1440,61 @@ set identifier [[[BuilderGenerator new] bgen "OPEG ID (id) id <- ::letter (::let
 ##
 ## 2) Implement parser-as-symbol in the intermediate (canonical) PEG
 ## representation: method-call frontend to intermediate PEG.
+
+## ser=pt::grammar::peg {rules {id {is {x {n ::letter} {* {/ {n ::letter} {n ::digit}}}} mode value}} start {n id}}
+
+pt::rde::nx public method asPeg {} {
+  if {[info exists :myPeg]} {
+    return ${:myPeg}
+  } else {
+    return [list n [self]]
+  }
+}
+
+pt::rde::nx public method fromPeg {ser} {
+
+  pt::tclparam::configuration::nx def _ _ _  {pt::peg::to::tclparam configure}
+  
+  ## strip down to just the core script fragment
+  pt::peg::to::tclparam configure -template {@code@}
+  
+  set body [pt::peg::to::tclparam convert $ser]
+  
+  return [pt::rde::nx ]
+}
+
+
+pt::rde::nx public method {,} {args} {
+  set :myPeg [list x {*}[lmap p [list [self] {*}$args] {$p asPeg}]]
+  return [self]
+}
+
+pt::rde::nx public method / {args} {
+  set :myPeg [list / {*}[lmap p [list [self] {*}$args] {$p asPeg}]]
+  return [self]
+}
+
+pt::rde::nx public method * {} {
+  return [list * [:asPeg]]
+}
+
+
+
+pt::rde::nx public method -> {args} {
+  
+}
+
+
+? {[::letter , ::letter ::letter] asPeg} {x {n ::letter} {n ::letter} {n ::letter}}
+
+? {[::letter / ::digit] asPeg} {/ {n ::letter} {n ::digit}}
+
+? {[::letter *] asPeg} {* {n ::letter}}
+
+? {[[::letter / ::digit] *] asPeg} {* {/ {n ::letter} {n ::digit}}}
+
+? {[[::letter / ::digit] -> identifier] info has type "pt::rde::nx"} 1
+
 ##
 ## 3) fix debug support in NX engine class (use apply wrapper to set
 ## the namespace context correctly)
@@ -1447,6 +1502,10 @@ set identifier [[[BuilderGenerator new] bgen "OPEG ID (id) id <- ::letter (::let
 ## 4) minimize pgen/bgen interface (default to some HEADER etc.)
 ##
 ## 5) fit object generators into builder interface
+##
+## 6) introduce an operator other than n? to generalize the injection
+## and to avoid interactions with other PEG extension modifying the
+## syntax of identifiers/symbols?
 ##
 
 exit
