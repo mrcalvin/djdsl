@@ -125,7 +125,7 @@ apply {{version code {test ""}} {
     
     :forward + %self operator Add
     
-    :method operator {class} {      
+    :method operator {class} {
       if {[llength ${:opds}] == 2} {
         lassign ${:opds} l r
         set :opds [$class new -childof [self] -leftExpr $l -rightExpr $r]
@@ -139,9 +139,12 @@ apply {{version code {test ""}} {
     }
     :public method from {expr} {
       foreach element [lreverse $expr] {
+        puts el=$element
         :$element
       }
-      return [lindex ${:opds} 0]
+      set r [lindex ${:opds} 0]
+      unset :opds
+      return $r
     }
   }
   #// end //
@@ -200,7 +203,15 @@ apply {{version code {test ""}} {
       :reset {}
       :data $script
       :MAIN ; # Entrypoint for the generated code.
-      :complete
+      set c [:complete]
+      lassign $c _ __ endIdx
+      puts >>$c
+      puts >>[string length $script]
+      puts endIdx=$endIdx
+      if {($endIdx+1) != [string length $script]} {
+        return -code error "Parsing failed."
+      }
+      return $c
     }
     
     :public object method pgen {frontendPeg} {
@@ -252,9 +263,31 @@ apply {{version code {test ""}} {
       }
     } 
   }
+
+  #
+  # A "little" testing language (akin to SPT & friends)
+  #
+
+  proc ::check {description fragment condition args} {
+    set ctr [incr [namespace current]::checkCounter]
+    set returnCodes {0 1 2}
+    set script ""
+    switch -- $condition {
+      build {
+        set args [lassign [lreverse $args] builder _]
+        set script [list catch [list $builder from $fragment]]
+        set result [expr {$args eq "succeeds" ? 0 : 1}]
+      }
+      default {error "check condition '$condition' unsupported"}
+    }
+    set t [list test check-$ctr $description -result $result -body $script \
+               -returnCodes $returnCodes]
+    puts t=$t
+    uplevel $t
+  }
   
 } {
-
+  
   #
   # === Abstract-syntax constraints
   #
@@ -289,12 +322,12 @@ apply {{version code {test ""}} {
   # Internal DSL (indirect instantiation):
   
   #// builder2 //
-  set build [AleBuilder new]
-  set expr1 [$build from {+ 1 + 2 4}]
+  set internalBuilder [AleBuilder new]
+  set expr1 [$internalBuilder from {+ 1 + 2 4}]
   #// end //
   ? {$expr1 info class} ::tutorial::Add 
 
-  ? {llength [Expr info instances -closure ${build}::*]} 5
+  ? {llength [Expr info instances -closure ${internalBuilder}::*]} 5
 
   # External DSL (indirect instantiation)
 
@@ -329,11 +362,11 @@ apply {{version code {test ""}} {
 
 
   #// builderExt //
-  set build [ExternalBuilder new -parser $lp]
-  set expr2 [$build from {(2 + 4) + 1}]
+  set externalBuilder [ExternalBuilder new -parser $lp]
+  set expr2 [$externalBuilder from {(2 + 4) + 1}]
   #// end //
   ? {$expr2 info class} ::tutorial::Add 
-  ? {llength [Expr info instances -closure ${build}::*]} 5
+  ? {llength [Expr info instances -closure ${externalBuilder}::*]} 5
 
   #
   # === Integration and execution
@@ -447,7 +480,33 @@ apply {{version code {test ""}} {
   ? {set r} 7
   ? {set r [$visitor evaluate -as double $expr1]; string is double $r} 1
   ? {set r} 7.0
+
+  #
+  # === Testing
+  #
+
+  #// testingInt //
+  check "Basic LEA expression (left-associative)" \
+      {+ 3 + 1 2} build "succeeds" using $internalBuilder
   
+  check "LEA expressions don't support subtraction." \
+      {- 3 + 1 2} build "fails" using $internalBuilder
+  #// end //
+
+  #// testingExt //  
+  check "Basic LEA expression (left-associative)" \
+      {(1 + 2) + 3} build "succeeds" using $externalBuilder
+  
+  check "LEA expressions don't support subtraction." \
+      {(1 + 2) + 3} build "fails" using $externalBuilder
+  #// end //
+
+  # Next step: pattern matching
+  # check "left-associate expression is built consistently" \
+  #    {+ 3 + 1 2} build to [$externalBuilder from {(1 + 2) + 3}] \
+  #    using $internalBuilder
+
+
 }
 
 # Local variables:
