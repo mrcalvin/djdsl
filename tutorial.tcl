@@ -151,7 +151,7 @@ apply {{version code {test ""}} {
 
 
   nx::Class create ExternalBuilder {
-    :property parser:object,type=pt::rde::nx,required
+    :property parser:object,type=::pt::rde::nx,required
     :method expression {start end args} {
       if {[llength $args] == 2} {
         return [Add new -childof [self] -leftExpr [lindex $args 0] -rightExpr [lindex $args 1]]
@@ -205,9 +205,9 @@ apply {{version code {test ""}} {
       :MAIN ; # Entrypoint for the generated code.
       set c [:complete]
       lassign $c _ __ endIdx
-      puts >>$c
-      puts >>[string length $script]
-      puts endIdx=$endIdx
+      # puts >>$c
+      # puts >>[string length $script]
+      # puts endIdx=$endIdx
       if {($endIdx+1) != [string length $script]} {
         return -code error "Parsing failed."
       }
@@ -498,7 +498,7 @@ apply {{version code {test ""}} {
       {(1 + 2) + 3} build "succeeds" using $externalBuilder
   
   check "LEA expressions don't support subtraction." \
-      {(1 + 2) + 3} build "fails" using $externalBuilder
+      {(1 + 2) - 3} build "fails" using $externalBuilder
   #// end //
 
   # Next step: pattern matching
