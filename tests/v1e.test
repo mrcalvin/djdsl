@@ -1,0 +1,265 @@
+package require tcltest 2.2
+eval ::tcltest::configure $argv
+
+package require djdsl::v1e
+
+namespace eval ::djdsl::v1e::test {
+  namespace import ::tcltest::*
+  namespace import ::djdsl::v1e::*
+  variable SETUP {set m1 [Model new]}
+  variable CLEANUP {$m1 destroy; unset m1}
+
+  test fm-via-api-1.1 "Each model has a root feature upon creation" \
+      -setup $SETUP \
+      -body {
+        [$m1 cget -root] info has type Feature
+      } \
+      -cleanup $CLEANUP \
+      -result 1
+
+  test fm-via-api-1.2 "Root feature is registered as a model element" \
+      -setup $SETUP \
+      -body {        
+        expr {[$m1 cget -root] eq [$m1 getElements]}
+      } \
+      -cleanup $CLEANUP \
+      -result 1; # root feature
+
+  test fm-via-api-1.3 "getElements on fresh model instance" \
+      -setup $SETUP \
+      -body {        
+        expr {[$m1 getElements Feature] eq [$m1 getElements]}
+      } \
+      -cleanup $CLEANUP \
+      -result 1; # root feature
+
+  test fm-via-api-1.4 "Create further model elements through model factory" \
+      -setup $SETUP \
+      -body {        
+        set X [$m1 define Feature -name X]
+        # [1..1] and |candidates| = 1, [1..1] is the default
+        $m1 define Choice -context [$m1 root get] -candidates $X; # mandatory, solitary sub-feature
+        llength [$m1 getElements]
+      } \
+      -cleanup $CLEANUP \
+      -result 3; # root feature + choice + subfeature
+
+  test opt-solitary-subfeature {} \
+      -setup $SETUP \
+      -body {
+        set Y [$m1 define Feature -name Y]
+        # [0..1] and |candidates| = 1
+        set ch [$m1 define Choice -context [$m1 root get] -lower 0 -upper 1 -candidates $Y];
+        return [llength [$m1 getElements]]-[expr {![$ch lower get] &&
+                                                  [$ch upper get] &&
+                                                  [llength [$ch candidates get]] == 1}]
+      } \
+      -cleanup $CLEANUP \
+      -result 3-1; # root feature + choice + subfeature
+  
+    test excl-or-group {} \
+      -setup $SETUP \
+      -body {
+        set E [$m1 define Feature -name E]
+        set F [$m1 define Feature -name F]
+        # [1..1] and |candidates| > 1, [1..1 is the default]
+        set ch [$m1 define Choice -context [$m1 root get] -candidates [list $E $F]];
+        return [llength [$m1 getElements]]-[expr {[$ch lower get] &&
+                                                  [$ch upper get] &&
+                                                  [llength [$ch candidates get]] > 1}]
+      } \
+      -cleanup $CLEANUP \
+      -result 4-1; # root feature + choice + group of 2 subfeatures
+
+  test incl-or-group {} \
+      -setup $SETUP \
+      -body {
+        set G [$m1 define Feature -name G]
+        set H [$m1 define Feature -name H]
+        # [1..|candidates|] and |candidates| > 1
+        set ch [$m1 define Choice -context [$m1 root get] -upper 2 \
+                    -candidates [list $G $H]];
+        return [llength [$m1 getElements]]-[expr {[$ch lower get] &&
+                                                  [$ch upper get] ==
+                                                  [llength [$ch candidates get]] &&
+                                                  [llength [$ch candidates get]] > 1}]
+      } \
+      -cleanup $CLEANUP \
+      -result 4-1; # root feature + choice + group of 2 subfeatures
+
+  test nesting-API-1.1 {} \
+      -body {
+        set m1 [Model with -rootFeature "X" {
+          Choice with -lower 1 -upper 1 {
+            Feature with -name A 
+            Feature with -name B
+            Feature with -name C
+          }
+          Constraint with {(A && Z) || B}
+        }]
+        list [llength [$m1 getElements Feature]]-[llength [$m1 getElements Choice]]-[llength [$m1 getElements Constraint]]
+      } \
+      -result 4-1-1
+
+  
+  test nesting-API-1.2 {} \
+      -body {
+        set m1 [Model with -rootFeature "X" {
+          Choice with -lower 1 -upper 1 {
+            Feature with -name A {
+              Choice with -lower 0 -upper 1 {
+                Feature with -name Z
+                Feature with -name D {
+                  Choice with -lower 0 -upper 1 {
+                    Feature with -name YY
+                  }
+                }
+              }
+            }
+            Feature with -name B
+            Feature with -name C {
+              Choice with -lower 0 -upper 1 {
+                Feature with -name DD
+              }
+            }
+          }
+          Constraint with {(A && Z) || B}
+        }]
+        list [llength [$m1 getElements Feature]]-[llength [$m1 getElements Choice]]-[llength [$m1 getElements Constraint]]
+      } \
+      -cleanup $CLEANUP \
+      -result 8-4-1
+
+  test nesting-API-1.3 {} \
+      -body {
+        set m1 [Model with -rootFeature "X" {
+          Choice with -lower 1 -upper 1 {
+            Choice with -lower 1 -upper 1 {
+              Feature with -name A
+            }
+          }
+        }]
+      } \
+      -returnCodes 1 \
+      -match glob \
+      -result "Invalid '::djdsl::v1e::Choice' specification*"
+
+
+  test nesting-API-1.4 {} \
+      -body {
+        set m1 [Model with -rootFeature "X" {
+          Choice with -lower 1 -upper 1 {
+            Feature with -name "X"
+          }}]
+      } \
+      -returnCodes 1 \
+      -match glob \
+      -result "Features must have unique names."
+
+  test nesting-API-1.5 {} \
+      -body {
+        set m1 [Model with -rootFeature "X" {
+          Choice with -lower 1 -upper 1 {
+            Feature with -name "Y"
+            Feature with -name "Y"
+          }}]
+      } \
+      -returnCodes 1 \
+      -match glob \
+      -result "Features must have unique names."
+  
+  test bdd-1.1 {} \
+      -body {
+        set m1 [Model with -rootFeature "GraphLibrary" {
+          Choice with -lower 0 -upper 1 {
+            Feature with -name "Weighted"
+          }
+          Choice with -lower 0 -upper 1 {
+            Feature with -name "Search" {
+              Choice with -lower 1 -upper 1 {
+                Feature with -name "BFS"
+                Feature with -name "DFS"
+              }
+            }
+          }
+          Choice with -lower 1 -upper 1 {
+            Feature with -name "EdgeType" {
+              Choice with -lower 1 -upper 1 {
+                Feature with -name "Directed"
+                Feature with -name "Undirected"
+              }
+            }
+          }
+          Choice with -lower 0 -upper 1 {
+            Feature with -name "Algorithm" {
+              Choice with -lower 1 -upper 4 {
+                Feature with -name "Cycle"
+                Feature with -name "ShortestPath"
+                Feature with -name "MST" {
+                  Choice with -lower 1 -upper 1 {
+                    Feature with -name "Prim"
+                    Feature with -name "Kruskal"
+                  }
+                }
+                Feature with -name "Transpose"
+              }
+            }
+          }
+        }]
+        # puts [join [$m1 getValidConfigurations 10] \n]
+        list [$m1 isValid] [$m1 nrValidConfigurations]
+      } \
+      -cleanup $CLEANUP \
+      -result {1 288}
+
+    test bdd-1.2 {} \
+      -body {
+        set m1 [Model newFromScript -rootFeature "GraphLibrary" {
+          Choice -lower 0 -upper 1 {
+            Feature -name "Weighted"
+          }
+          Choice -lower 1 -upper 1 {
+            Feature -name "EdgeType" {
+              Choice -lower 1 -upper 1 {
+                Feature -name "Directed"
+                Feature -name "Undirected"
+              }
+            }
+          }
+          Choice -lower 0 -upper 1 {
+            Feature -name "Algorithm" {
+              Choice -lower 1 -upper 4 {
+                Feature -name "Cycle"
+                Feature -name "ShortestPath"
+                Feature -name "MST" {
+                  Choice -lower 1 -upper 1 {
+                    Feature -name "Prim"
+                    Feature -name "Kruskal"
+                  }
+                }
+                Feature -name "Transpose"
+              }
+            }
+          }
+          # Constraint {not Prim}
+          Constraint {not MST or (Undirected and Weighted)}
+          Constraint {not Cycle or Directed}
+        }]
+        puts [join [$m1 getValidConfigurations [$m1 nrValidConfigurations]] \n]
+        list [llength [$m1 getElements Feature]]-[llength [$m1 getElements Choice]]-[llength [$m1 getElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+      } \
+      -cleanup $CLEANUP \
+      -result 12-6-2-1-32
+  
+  cleanupTests
+}
+
+# namespace delete ::v1e::test
+
+#
+# Local variables:
+#    mode: tcl
+#    tcl-indent-level: 2
+#    indent-tabs-mode: nil
+# End:
+#
