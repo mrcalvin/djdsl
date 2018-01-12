@@ -8,4 +8,9 @@ tutorial.adoc : tutorial.src
 	$(TCLSH) $(NSFSRC)/apps/utils/source-doc-beautifier.tcl -notitle $<
 	mv tutorial.txt $@
 
+test: loadscript.tcl
+	$(TCLSH) tests/all.tcl \
+		-loadfile loadscript.tcl \
+		$(TESTFLAGS)
+
 all: tutorial.adoc

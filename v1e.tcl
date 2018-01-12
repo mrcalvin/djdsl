@@ -132,31 +132,40 @@ apply {{version code {test ""}} {
   nx::Class create Model {
 
     :property -accessor public constraints:object,type=Constraint,0..*
-    :property -accessor public {root:substdefault,object,type=Feature {[:define Feature -name ""]}}
+    :property -accessor public choices:object,type=Choice,1..*
 
-    :variable elements:object,type=Model::Element,1..*
+    # TODO: make derived, without providing setters (only getters)
+    :property -accessor public {root:substdefault,object,type=Feature {[:setup]}}
+    :variable owned:object,type=Model::Element,1..*
+
+    :protected method setup {} {
+      set rf [:define Feature -name ""]
+      set rc [:define Choice -lower 1 -upper 1 -candidates $rf]
+      lappend :choices $rc
+      return $rf
+    }
     
     :public method define {elementType:class args} {
       try {
-        set el [$elementType new -owningModel [self] {*}$args]
+        set el [$elementType new -model [self] {*}$args]
       } trap {V1E SPEC INVALID} {e opts} {
         return -code error -errorcode "V1E SPEC INVALID" $e
       } on error {e opts} {
         return -code error -errorcode "V1E SPEC INVALID" "Invalid '$elementType' specification: $args."
       }
       $el register 
-      lappend :elements $el
+      lappend :owned $el
       return $el
     }
 
-    :public method getElements {elementType:class,optional} {
+    :public method getOwnedElements {elementType:class,optional} {
 
       if {![info exists elementType]} {
-	return ${:elements}
+	return ${:owned}
       }
 
       set res [list]
-      foreach el ${:elements} {
+      foreach el ${:owned} {
 	if {[$el info has type $elementType]} {
 	  lappend res $el
 	}
@@ -197,8 +206,8 @@ apply {{version code {test ""}} {
 
 
     :public method destroy {} {
-      if {[info exists :elements]} {
-        foreach el ${:elements} {
+      if {[info exists :owned]} {
+        foreach el ${:owned} {
           $el destroy
         }
       }
@@ -374,10 +383,13 @@ apply {{version code {test ""}} {
           incr pos
         }
 
+        # TODO: generalize this by treating the root Choice as the
+        # others.
         ${:system} & C0 [$rootFeat name get] 1; # root feature is always TRUE
         
         set C 1
-        foreach c [${:model} getElements Choice] {
+        foreach c [${:model} getOwnedElements Choice] {
+          if {![$c context isSet]} continue
           set pObj [$c context get]
           set p [$pObj name get]
           
@@ -442,7 +454,7 @@ apply {{version code {test ""}} {
 
         # inject the constraints feature expressions into the BDD
         # system, if any ...
-        set fexprs [lmap cstr [${:model} getElements Constraint] {
+        set fexprs [lmap cstr [${:model} getOwnedElements Constraint] {
           $cstr cget -expression
         }]
 
@@ -552,7 +564,7 @@ apply {{version code {test ""}} {
   }
     
   nx::Class create Model::Element {
-    :property -accessor public owningModel:required
+    :property -accessor public model:object,type=[:info parent],required
     :public method register {} {
       error "Must be implemented by each subclass!"
     }
@@ -561,7 +573,12 @@ apply {{version code {test ""}} {
 
   nx::Class create Choice -superclasses Model::Element {
 
-    :property -accessor public context:object,type=Feature;#,required
+    :property -accessor public context:object,type=Feature {
+      :public object method value=isSet {obj args} {
+        ::nsf::var::exists $obj context
+      }
+    }
+    
     :property -accessor public candidates:object,type=Feature,1..*
 
     :property -accessor public {upper:integer 1}
@@ -588,10 +605,10 @@ apply {{version code {test ""}} {
     :property -accessor public owning:object,type=Choice
     :property -accessor public -incremental owned:object,type=Choice,0..*
     
-    :public object method new {-owningModel -name args} {
-      if {[$owningModel featureLookup $name] eq ""} {
+    :public object method new {-model -name args} {
+      if {[$model featureLookup $name] eq ""} {
         set f [next]
-        $owningModel featureSet $name $f
+        $model featureSet $name $f
         return $f
       } else {
         return -code error -errorcode "V1E SPEC INVALID" "Features must have unique names."
