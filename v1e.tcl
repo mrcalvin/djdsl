@@ -260,6 +260,40 @@ apply {{version code {test ""}} {
         namespace delete $ns
       }
     }
+    
+    :public object method newFromScript2 {script} {
+      set box [nx::Object new -childof [self] {
+        :object method root {args} {
+          set :root $args
+        }
+        :object method feature {-name args} {
+          puts stderr "          interp alias {} [self]::%$name {} Feature with -name $name {*}$args"
+          set aliasName [self]::%$name
+          append body [list interp alias {} [self]::%$name {}] \;
+          append body [list Feature -name $name {*}$args] \;
+          puts body=$body
+          interp alias {} [self]::%$name {} apply [list {} $body [self]]
+          # dict set :env $name $args
+        }
+      }]
+      $box require namespace
+      interp alias {} ${box}::Root {} :root
+      interp alias {} ${box}::Feature {} :feature
+      $box eval [list apply [list {} $script $box]]
+      lassign [$box eval {set :root}] rootFeature script
+      
+      foreach elClass [[current]::Element info subclasses] {
+        interp alias {} ${box}::[namespace tail $elClass] {} $elClass with
+      }
+      
+      try {
+        :with -rootFeature $rootFeature -ns $box $script
+        # apply [list {} [list :with -rootFeature $rootFeature $script] $ns]
+      } finally {
+        $box destroy
+      }
+    }
+
 
 
     :public object method with {-rootFeature -ns spec} {

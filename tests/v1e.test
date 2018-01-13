@@ -211,7 +211,7 @@ namespace eval ::djdsl::v1e::test {
       } \
       -cleanup $CLEANUP \
       -result {1 288}
-
+  
     test bdd-1.2 {} \
       -body {
         set m1 [Model newFromScript -rootFeature "GraphLibrary" {
@@ -250,11 +250,94 @@ namespace eval ::djdsl::v1e::test {
       } \
       -cleanup $CLEANUP \
       -result 12-7-2-1-32
+
+      test bdd-1.3 {} \
+      -body {
+        set m1 [Model newFromScript2 {
+          Feature -name "EdgeType" {
+            Choice -lower 1 -upper 1 {
+              Feature -name "Directed"
+              Feature -name "Undirected"
+            }
+          }
+          Root "GraphLibrary" {
+            Choice -lower 0 -upper 1 {
+              Feature -name "Weighted"
+            }
+            Choice -lower 1 -upper 1 {
+              %EdgeType
+            }
+            Choice -lower 0 -upper 1 {
+              %Algorithm
+            }
+            # Constraint {not Prim}
+            Constraint {not MST or (Undirected and Weighted)}
+            Constraint {not Cycle or Directed}
+          }
+          Feature -name "MST" {
+            Choice -lower 1 -upper 1 {
+              Feature -name "Prim"
+              Feature -name "Kruskal"
+            }
+          }
+          Feature -name "Algorithm" {
+            Choice -lower 1 -upper 4 {
+              Feature -name "Cycle"
+              Feature -name "ShortestPath"
+              %MST
+              Feature -name "Transpose"
+            }
+          }
+        }]
+        puts [join [$m1 getValidConfigurations [$m1 nrValidConfigurations]] \n]
+        list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+      } \
+      -cleanup $CLEANUP \
+      -result 12-7-2-1-32
+
   
   cleanupTests
 }
 
 # namespace delete ::v1e::test
+
+
+  if {0} {
+    #####
+    :let EdgeType {
+      {1 1} {
+        Directed
+        Undirected 
+      }
+    }
+    
+    :model 1 1 {
+      GraphLibrary {
+        {0 1} {
+          Weighted
+        }
+        {1 1} {
+          $EdgeType
+        }
+        {0 1} {
+          {Algorithm
+            {1 4} {
+              Cycle
+              ShortestPath
+              {MST 
+                {1 1} {
+                  Prim
+                  Kruskal
+                }
+              }
+            }
+          }
+        }
+      }
+    #####
+    }
+  }
+
 
 #
 # Local variables:
