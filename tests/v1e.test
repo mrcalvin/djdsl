@@ -206,7 +206,7 @@ namespace eval ::djdsl::v1e::test {
             }
           }
         }]
-        # puts [join [$m1 getValidConfigurations 10] \n]
+        puts [join [$m1 getValidConfigurations 10] \n]
         list [$m1 isValid] [$m1 nrValidConfigurations]
       } \
       -cleanup $CLEANUP \

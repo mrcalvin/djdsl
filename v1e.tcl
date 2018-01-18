@@ -144,18 +144,23 @@ apply {{version code {test ""}} {
       lappend :choices $rc
       return $rf
     }
-    
+
     :public method define {elementType:class args} {
+      set el [:require $elementType {*}$args]
+      $el register
+      lappend :owned $el; # FIX: creates duplicates
+      return $el
+    }
+    
+    :public method require {elementType:class args} {
       try {
-        set el [$elementType new -model [self] {*}$args]
+        $elementType new -model [self] {*}$args
       } trap {V1E SPEC INVALID} {e opts} {
         return -code error -errorcode "V1E SPEC INVALID" $e
       } on error {e opts} {
-        return -code error -errorcode "V1E SPEC INVALID" "Invalid '$elementType' specification: $args."
+        return -code error -errorcode \
+            "V1E SPEC INVALID" "Invalid '$elementType' specification: $args."
       }
-      $el register 
-      lappend :owned $el
-      return $el
     }
 
     :public method getOwnedElements {elementType:class,optional} {
@@ -267,11 +272,9 @@ apply {{version code {test ""}} {
           set :root $args
         }
         :object method feature {-name args} {
-          puts stderr "          interp alias {} [self]::%$name {} Feature with -name $name {*}$args"
           set aliasName [self]::%$name
           append body [list interp alias {} [self]::%$name {}] \;
           append body [list Feature -name $name {*}$args] \;
-          puts body=$body
           interp alias {} [self]::%$name {} apply [list {} $body [self]]
           # dict set :env $name $args
         }
@@ -294,48 +297,53 @@ apply {{version code {test ""}} {
       }
     }
 
+    :public method addFromScript {script ns:optional} {
 
-
-    :public object method with {-rootFeature -ns spec} {
       if {![info exists ns]} {
         set ns [namespace current]
         namespace eval [self] {namespace import ::djdsl::v1e::*}
       }
-      
+
+      set factory "[current class]::Factory"
+      $factory outputModel set [self]
+      $factory ns set $ns
+      nx::Class mixins add $factory
+      try {
+        lappend :kidz [dict create]
+        apply [list {} $script $ns]
+        if {[info exists :kidz]} {
+          set k [lindex ${:kidz} end]
+          if {[dict exists $k -owned]} {
+            ${:root} configure {*}[dict filter $k key -owned]
+            ${:root} register
+          }
+          if {[dict exists $k -constraints]} {
+            # TODO: substdefault on root is called again, FIX!
+            :configure -root ${:root} {*}[dict filter $k key -constraints]
+          }
+        }
+        return
+      } on error {res opts} {
+        return -code error -options $opts $res
+      } finally {
+        nx::Class mixins delete $factory
+        $factory outputModel unset
+        $factory ns unset
+        unset -nocomplain :kidz
+      }
+    }
+
+
+
+    :public object method with {-rootFeature -ns spec} {      
       set m [:new]
       set root [$m root get]
       if {[info exists rootFeature]} {
        	$root name set $rootFeature
         $m featureSet $rootFeature $root
       }
-      [self]::Factory outputModel set $m
-      [self]::Factory ns set $ns
-      nx::Class mixins add [self]::Factory
-      try {
-        $m eval {lappend :kidz [dict create]}
-        # $m eval $spec
-        $m eval [list apply [list {} $spec $ns]]
-        if {[$m eval {info exists :kidz}]} {
-          set k [$m eval {lindex ${:kidz} end}]
-          if {[dict exists $k -owned]} {
-            $root configure {*}[dict filter $k key -owned]
-            $root register
-          }
-          if {[dict exists $k -constraints]} {
-            # TODO: substdefault on root is called again, FIX!
-            $m configure -root [$m root get] {*}[dict filter $k key -constraints]
-          }
-        }
-      } on ok {} {
-        return $m
-      } on error {res opts} {
-        return -code error -options $opts $res
-      } finally {
-        nx::Class mixins delete [self]::Factory
-        [self]::Factory outputModel unset
-        $m eval {unset -nocomplain :kidz}
-      }
-
+      $m addFromScript $spec $ns
+      return $m
     }
 
     :public method isValid {} {
@@ -353,6 +361,12 @@ apply {{version code {test ""}} {
       return [$bdd computeValidConfigurations $n]
     }
 
+    :public method equiv {that:object,type=Model} {
+      set bdd [: -local requireBDD]
+      return [$bdd ]
+    }
+
+
 
     
 
@@ -369,27 +383,34 @@ apply {{version code {test ""}} {
     
     nx::Class create [self]::BDD {
       :property model:object,type=[:info parent]
-      :variable rootExpr C0
+      # :variable rootExpr C0
 
       :public method isSatisfiable {} {
-        return [${:system} satisfiable ${:rootExpr}]
+        return [${:system} satisfiable ${:model}]
       }
 
       :public method satCount {} {
-        return [${:system} satcount ${:rootExpr}]
+        return [${:system} satcount ${:model}]
       }
 
       :public method computeValidConfigurations {n} {
         set out [list]
         set counter 0
-        ${:system} foreach_sat x ${:rootExpr} {
+        ${:system} foreach_sat x ${:model} {
           bdd::foreach_fullsat v ${:varsIdx} $x {
             if {$counter == $n} { return $out; }
             lappend out [lmap i ${:varsIdx} j $v {
-              set _ [expr {($i+1)*$j}]; if {$_ == 0} {
+              set _ [expr {($i+1)*$j}];
+              if {$_ == 0} {
                 continue
               } else {
-                lindex ${:vars} [incr _ -1]}
+                set obj [lindex ${:vars} [incr _ -1]]
+                if {[$obj name isSet]} {
+                  $obj name get
+                } else {
+                  continue; # $obj;
+                }
+              }
             }]
             incr counter
           }
@@ -404,11 +425,15 @@ apply {{version code {test ""}} {
       }
 
       :method init {} {
+
+        # ::djdsl::v1e::* prefixing should not be necessary, v1e.test ok, v1e.tcl not. grrr.
         
         set :system [bdd::system new]
         set feats [${:model} eval {set :feats}]
         set rootFeat [${:model} root get]
-        set :vars [dict keys $feats]
+        
+        # set :vars [dict values $feats]
+        set :vars [lsort -unique [${:model} getOwnedElements ::djdsl::v1e::Feature]]
         
         set pos 0
         foreach f ${:vars} {
@@ -417,85 +442,92 @@ apply {{version code {test ""}} {
           incr pos
         }
 
-        # TODO: generalize this by treating the root Choice as the
-        # others.
-        ${:system} & C0 [$rootFeat name get] 1; # root feature is always TRUE
+        ${:system} & ${:model} 1 1; # root feature is always TRUE
         
-        set C 1
-        foreach c [${:model} getOwnedElements Choice] {
-          if {![$c context isSet]} continue
-          set pObj [$c context get]
-          set p [$pObj name get]
-          
+        # puts stderr >>>[namespace current],[namespace which Choice],[uplevel 1 {namespace current}]
+        foreach c [${:model} getOwnedElements ::djdsl::v1e::Choice] {
+          if {[$c context isSet]} {
+            set p [$c context get]
+          } else {
+            set p ${:model}
+          }
+         
           if {[$c lower get] == 0 && [$c upper get] == 1} {
             if {[llength [$c candidates get]] == 1} {
               # optional, solitary sub-feature
-              set f [[$c candidates get] name get]
+              set f [$c candidates get]
               # puts "${:system} <= C$C $f $p"
-              ${:system} <= C$C $f $p
+              ${:system} <= $c $f $p
             } else {
               # TODO: is this needed?
               # group of optional features
             }
-          }
-          
-          if {[$c lower get] == 1 && [$c upper get] == 1} {
+          } elseif {[$c lower get] == 1 && [$c upper get] == 1} {
             if {[llength [$c candidates get]] == 1} {
               # mandatory, solitary sub-feature
-              set f [[$c candidates get] name get]
+              set f [$c candidates get]
               # ${:system} <= aC$C $p $f
               # ${:system} <= bC$C $f $p
               # ${:system} & C$C aC$C bC$C
-              ${:system} == C$C $p $f
+              ${:system} == $c $p $f
             } else {
               
               # pt 1: disjunction term 
               set cands [$c candidates get]
               set r [lassign $cands c1 c2]
-              ${:system} | tmp0 [$c1 name get] [$c2 name get]
+              ${:system} | tmp0 $c1 $c2
               foreach rc $r {
-                ${:system} | tmp0 tmp0 [$rc name get]
+                ${:system} | tmp0 tmp0 $rc
               }
               # ${:system} <= aC$C tmp0 $p
               # ${:system} <= bC$C $p tmp0
               # ${:system} & C$C aC$C bC$C
-              ${:system} == C$C tmp0 $p
-              
+              ${:system} == $c tmp0 $p
+              # CHECK: unset tmp0 then?
               # pt 2: pairwise exclusions
               foreach comb [:comb2 $cands] {
                 lassign $comb c1 c2
-                ${:system} & tmp3 [$c1 name get] [$c2 name get]
+                ${:system} & tmp3 $c1 $c2
                 ${:system} ~ ntmp3 tmp3; # negate the term
-                ${:system} & C$C C$C ntmp3 
+                ${:system} & $c $c ntmp3 
               }
             }
-          }
-          if {[$c lower get] == 1 && [$c upper get] > 1 &&
-              [$c upper get] == [llength [$c candidates get]]} {
+          } elseif {[$c lower get] == 1 && [$c upper get] > 1 &&
+                    [$c upper get] == [llength [$c candidates get]]} {
             set r [lassign [$c candidates get] c1 c2]
-            ${:system} | tmp1 [$c1 name get] [$c2 name get]
+            ${:system} | tmp1 $c1 $c2
             foreach rc $r {
-              ${:system} | tmp1 tmp1 [$rc name get]
+              ${:system} | tmp1 tmp1 $rc
             }
-            ${:system} == C$C tmp1 $p
+            ${:system} == $c tmp1 $p
+          } elseif {!([$c lower get] + [$c upper get])} {
+            # ${:system} ~ ntmp4 [$c candidates get]
+            # ${:system} == $c $p ntmp4
+            ${:system} & $c 1 1
+            foreach cand [$c candidates get] {
+              ${:system} ~ ntmp4 $cand
+              ${:system} & $c $c ntmp4
+            }
+            ${:system} == $c $p ntmp4
+          } else {
+            throw {V1E BDD NOTIMPLEMENTED} "The multiplicity [$c lower get],[$c upper get] is not implemented."
           }
 
-          ${:system} & C0 C0 C$C
-          
-          # puts [${:system} dump C0]
-          incr C
+          ${:system} & ${:model} ${:model} $c
+          # puts [${:system} dump ${:model}]
         }
 
         # inject the constraints feature expressions into the BDD
         # system, if any ...
-        set fexprs [lmap cstr [${:model} getOwnedElements Constraint] {
+        set fexprs [lmap cstr [${:model} getOwnedElements ::djdsl::v1e::Constraint] {
           $cstr cget -expression
         }]
 
         if {[llength $fexprs]} {
-          ${:system} & C0 C0 [:add {*}$fexprs]
+          ${:system} & ${:model} ${:model} [:add {*}$fexprs]
         }
       }
+
       
       :protected method comb2 {in} {
         if {[llength $in] <= 2} {
@@ -517,19 +549,21 @@ apply {{version code {test ""}} {
       ## - which does *not* contain literal truth values (1, 0).
       ##
 
+      # leaf:   BinaryOp 		<- AndOp / OrOp / ImplOp;
+      #         ImplOp 			<- 'implies' / '->';
+      
       set v1e {
         PEG v1e (Expression)
+        #// constrL //
         Expression     		<- _ Term (_ BinaryOp _ Term)?;
         Term		 	<- NotOp? _ (Variable / '(' Expression ')');
-        # leaf:	Atom            	<- Literal / Variable;
-        #	Literal			<- '1' / '0';
-        leaf:   BinaryOp 		<- AndOp / OrOp / ImplOp;
+leaf:   BinaryOp 		<- AndOp / OrOp;
         AndOp 			<- 'and' / '&&';
         OrOp			<- 'or' / '||';
-        ImplOp 			<- 'implies' / '->';
         NotOp 			<- 'not' / '-';
         Variable 		<- <alnum>+;
-        void:	_			<- <space>*;	
+void:	_			<- <space>*;
+        #// end //
         END;}
 
       set v1eParser [pt::rde::nx pgen $v1e]
@@ -592,16 +626,20 @@ apply {{version code {test ""}} {
       
       :method "input Variable" {from to args} {
         # TODO: Check for valid feature names?
-        string range ${:fexpr} $from $to
+        set name [string range ${:fexpr} $from $to]
+        ${:model} featureLookup $name
       } 
     } 
   }
     
   nx::Class create Model::Element {
     :property -accessor public model:object,type=[:info parent],required
-    :public method register {} {
+    :protected method register {} {
       error "Must be implemented by each subclass!"
     }
+    # :public method init {} {
+    # :register
+    # }
   }
 
 
@@ -620,7 +658,9 @@ apply {{version code {test ""}} {
 
     :public method register {} {
       foreach c ${:candidates} {
-	$c owning set [self]
+        if {![$c eval {info exists :owning}]} {
+          $c owning set [self]
+        }
       }
     }
     
@@ -634,23 +674,34 @@ apply {{version code {test ""}} {
   }
   
   nx::Class create Feature -superclasses Model::Element {
-    :property -accessor public name
+    :property -accessor public name {
+      :public object method value=isSet {obj args} {
+        ::nsf::var::exists $obj name
+      }
+    }
     
     :property -accessor public owning:object,type=Choice
     :property -accessor public -incremental owned:object,type=Choice,0..*
     
     :public object method new {-model -name args} {
-      if {[$model featureLookup $name] eq ""} {
-        set f [next]
-        $model featureSet $name $f
-        return $f
+      if {![info exists name]} {
+        set existing ""
       } else {
-        return -code error -errorcode "V1E SPEC INVALID" "Features must have unique names."
+        set existing [$model featureLookup $name]
+      }
+      
+      if {$existing eq ""} {
+        next
+      } else {
+        return $existing
       }
     }
     
     :public method register {} {
       # ${:owningModel} featureSet ${:name} [self]
+      if {[info exists :name]} {
+        ${:model} featureSet ${:name} [self]
+      }
       if {[info exists :owned]} {
         foreach c ${:owned} {
           $c context set [self]
@@ -680,7 +731,7 @@ apply {{version code {test ""}} {
 
   nx::Class create Constraint -superclasses Model::Element {
       :property expression
-      :public method register {} {;}
+      :public method register {args} {}
       :public object method with {expr} {
 	  return [list [list -expression $expr] "" -constraints]
       }
@@ -689,6 +740,166 @@ apply {{version code {test ""}} {
   namespace export Model Choice Feature Constraint
 
 } {
+  #
+  # A small excerpt from the GPL feature model, defined using the v1e
+  # textual notation.
+  #
+  set gpl [Model newFromScript2 {
+    #// gpl1 //
+    Root "Graph" {
+      Choice -lower 0 -upper 1 {
+        Feature -name "coloured"
+      }
+      Choice -lower 0 -upper 1 {
+        Feature -name "weighted"
+      }
+    }
+    #// end //
+  }]
+
+  ? {llength [$gpl getOwnedElements]} 6
+
+  #
+  # TVL example of flattening declaration hierarchies (Fig 2)
+  #
+  set tvl1 [Model newFromScript2 {
+    #// tvl1 //
+    Root "R" {
+      Choice -lower 1 -upper 1 {
+        Feature -name "Level1" {
+          Choice -lower 1 -upper 1 {
+            Feature -name "Level2" {
+              Choice -lower 2 -upper 2 {
+                Feature -name "Level3a"
+                Feature -name "Level3b"
+              }
+            }
+          }
+        }
+      }
+    }
+    #// end //
+  }]
+
+  ? {llength [$tvl1 getOwnedElements]} 9
+
+  set tvl2 [Model newFromScript2 {
+    #// tvl2 //
+    Root "R" {
+      Choice -lower 1 -upper 1 {
+        %Level1
+      }
+    }
+    
+    Feature -name "Level1" {
+      Choice -lower 1 -upper 1 {
+        %Level2
+      }
+    }
+    
+    Feature -name "Level2" {
+      Choice -lower 2 -upper 2 {
+        Feature -name "Level3a"
+        Feature -name "Level3b"
+      }
+    }
+    #// end //
+  }]
+
+  ? {llength [$tvl2 getOwnedElements]} 9
+
+  # The following (non-hierarchical) constraints can be specified (choice equivalent):
+  # - and     ... [1,1]
+  # - or      ... [0,1]
+  # - not     ... [0,0]
+  # - implies ... (not/or) [0,1] / 0,0]
+
+  set constrainedModel [Model newFromScript2 {
+    #// constrM //
+    Root "Graph" {
+      Choice -lower 0 -upper 1 {
+        Feature -name "Algorithm" {
+          Choice -lower 1 -upper 2 {
+            Feature -name "MST"
+            Feature -name "ShortestPath"
+          }
+        }
+      }
+      Choice -lower 0 -upper 1 {
+        Feature -name "weighted"
+      }
+      #// end //
+      #// constr2 //
+      Constraint {not MST or weighted}
+      #// end //
+    }
+  }]
+  
+  ? {llength [$constrainedModel getOwnedElements]} 10
+  ? {$constrainedModel nrValidConfigurations} 6
+
+  set constrainedModel2 [Model newFromScript2 {
+    Root "Graph" {
+      Choice -lower 0 -upper 1 {
+        Feature -name "Algorithm" {
+          Choice -lower 1 -upper 2 {
+            Feature -name "MST"
+            Feature -name "ShortestPath"
+          }
+        }
+      }
+      Choice -lower 0 -upper 1 {
+        Feature -name "weighted"
+      }
+    }
+  }]
+
+
+  if {1} {
+    $constrainedModel2 addFromScript {
+      #// constr3 //
+      Choice with -lower 1 -upper 2 {
+        Feature with {
+          Choice with -lower 0 -upper 0 {
+            Feature with -name "MST"
+          }
+        }
+        Feature with -name "weighted"
+      }
+    }
+    #// end //
+  } else {
+    set f2 [$constrainedModel2 define Feature -name "MST"]
+    set ch2 [$constrainedModel2 define Choice -lower 0 -upper 0 -candidates $f2]
+    set f1 [$constrainedModel2 define Feature -owned $ch2]
+    set f3 [$constrainedModel2 define Feature -name "weighted"]
+    set ch1 [$constrainedModel2 define Choice -lower 1 -upper 2 -candidates [list $f1 $f3]]
+    
+    $constrainedModel2 choices add $ch1
+
+    ? {llength [$constrainedModel2 choices get]} 2
+  }
+  
+  ? {$constrainedModel2 nrValidConfigurations} 6
+  
+  ? {$constrainedModel getValidConfigurations [$constrainedModel nrValidConfigurations]} \
+      [list Graph \
+           {Graph weighted} \
+           {Graph ShortestPath Algorithm} \
+           {Graph ShortestPath Algorithm weighted} \
+           {Graph MST Algorithm weighted} \
+           {Graph MST ShortestPath Algorithm weighted}]
+  
+  ? {$constrainedModel2 getValidConfigurations [$constrainedModel2 nrValidConfigurations]} \
+      [list Graph \
+           {Graph weighted} \
+           {Graph ShortestPath Algorithm} \
+           {Graph ShortestPath Algorithm weighted} \
+           {Graph MST Algorithm weighted} \
+           {Graph MST ShortestPath Algorithm weighted}]
+
+  # TODO:
+  # ? {$constrainedModel2 equiv $constrainedModel} 1; # === BDD1 BDD2
 
 }
 
