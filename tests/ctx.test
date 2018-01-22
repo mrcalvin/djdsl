@@ -1,0 +1,59 @@
+package require tcltest
+eval ::tcltest::configure $argv
+
+package require djdsl::ctx
+
+
+namespace eval ::djdsl::ctx::test {
+  namespace import ::tcltest::*
+  namespace import ::djdsl::lm::*
+  namespace import ::djdsl::ctx::*
+  
+  variable SETUP {set lm1 [Asset create Graphs {
+    LanguageModel create [self]::Graph {
+      :property name
+      :property -incremental {edges:0..*,type=Graph::Edge,substdefault {[list]}}
+      :property -incremental {nodes:0..*,type=Graph::Node,substdefault {[list]}}
+      
+      Classifier create [self]::Node
+      Classifier create [self]::Edge {
+        :property -accessor public a:object,type=Node,required
+        :property -accessor public b:object,type=Node,required
+      }
+    }
+  }]
+  }
+  
+  variable CLEANUP {$lm1 destroy; unset lm1}
+  
+  test ctx-1.1 "Set up context condition" -setup $SETUP -body {
+    ${lm1}::Graph condition add [Condition new -bodyExpression {
+      [llength [:edges get]]/2 == [llength [:nodes get]]
+    }]
+    llength [${lm1}::Graph condition get]
+  } -cleanup $CLEANUP -result 1
+
+  test ctx-1.2 "Evaluate condition against a context instance (a.k.a. validation)" \
+      -setup $SETUP \
+      -body {
+        ${lm1}::Graph condition add [Condition new -bodyExpression {
+          [llength [:edges get]]/2 == [llength [:nodes get]]
+        }]
+        
+        set subject [Graphs new graph -name "g"]
+        $subject nodes add [$subject new node]
+        $subject nodes add [$subject new node]
+        
+        catch [list ${lm1}::Graph validate $subject] -> opts
+        dict get $opts -errorcode
+        
+      } -cleanup $CLEANUP -match glob -result "DJDSL CTX VIOLATED *"
+}
+
+#
+# Local variables:
+#    mode: tcl
+#    tcl-indent-level: 2
+#    indent-tabs-mode: nil
+# End:
+#
