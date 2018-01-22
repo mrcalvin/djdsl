@@ -136,7 +136,28 @@ apply {{version code {test ""}} {
 
     # TODO: make derived, without providing setters (only getters)
     :property -accessor public {root:substdefault,object,type=Feature {[:setup]}}
-    :variable owned:object,type=Model::Element,1..*
+
+    # Uniqueness-constrained property based on [dict]
+    :property -accessor protected -incremental owned:object,type=Model::Element,1..* {
+      :public object method value=set {obj prop value:object,type=::djdsl::v1e::Model::Element,1..*} {
+        dict keys [next [list $obj $prop [concat {*}[lmap a $value b {} {list $a $b}]]]]
+      }
+
+      :public object method value=isSet {obj prop args} {
+        $obj eval [list info exists :$prop]
+      }
+      
+      :public object method value=get {obj prop} {
+        dict keys [next]
+      }
+      :public object method value=add {obj prop value:object,type=::djdsl::v1e::Model::Element} {
+        dict keys [$obj eval [list dict set :$prop $value ""]]
+      }
+
+      :public object method value=delete {obj prop value} {
+        $obj eval [list dict unset :$prop $value]
+      }
+    }
 
     :protected method setup {} {
       set rf [:define Feature -name ""]
@@ -148,7 +169,7 @@ apply {{version code {test ""}} {
     :public method define {elementType:class args} {
       set el [:require $elementType {*}$args]
       $el register
-      lappend :owned $el; # FIX: creates duplicates
+      :owned add $el
       return $el
     }
     
@@ -165,12 +186,13 @@ apply {{version code {test ""}} {
 
     :public method getOwnedElements {elementType:class,optional} {
 
+      set owned [:owned get]
       if {![info exists elementType]} {
-	return ${:owned}
+	return $owned
       }
 
       set res [list]
-      foreach el ${:owned} {
+      foreach el $owned {
 	if {[$el info has type $elementType]} {
 	  lappend res $el
 	}
@@ -211,8 +233,8 @@ apply {{version code {test ""}} {
 
 
     :public method destroy {} {
-      if {[info exists :owned]} {
-        foreach el ${:owned} {
+      if {[:owned isSet]} {
+        foreach el [:owned get] {
           $el destroy
         }
       }
@@ -342,7 +364,11 @@ apply {{version code {test ""}} {
        	$root name set $rootFeature
         $m featureSet $rootFeature $root
       }
-      $m addFromScript $spec $ns
+      if {[info exists ns]} {
+        $m addFromScript $spec $ns
+      } else {
+        $m addFromScript $spec
+      }
       return $m
     }
 
@@ -367,8 +393,6 @@ apply {{version code {test ""}} {
     }
 
 
-
-    
 
     :private method requireBDD {} {
       if {![info exists :bdd]} {
@@ -426,13 +450,17 @@ apply {{version code {test ""}} {
 
       :method init {} {
 
-        # ::djdsl::v1e::* prefixing should not be necessary, v1e.test ok, v1e.tcl not. grrr.
+        # TODOs:
+        # - rework to walk spines of choices, rather than all choices as a bulk (visitor)
+        # - ::djdsl::v1e::* prefixing should not be necessary, v1e.test ok, v1e.tcl not. grrr.
+        # - refactor, so that we can process arbitrary choices into
+        #   corresponding BDDs, given a BDD system.
         
         set :system [bdd::system new]
         set feats [${:model} eval {set :feats}]
         set rootFeat [${:model} root get]
         
-        # set :vars [dict values $feats]
+        # FIX:
         set :vars [lsort -unique [${:model} getOwnedElements ::djdsl::v1e::Feature]]
         
         set pos 0
@@ -443,7 +471,8 @@ apply {{version code {test ""}} {
         }
 
         ${:system} & ${:model} 1 1; # root feature is always TRUE
-        
+
+        # FIX:
         # puts stderr >>>[namespace current],[namespace which Choice],[uplevel 1 {namespace current}]
         foreach c [${:model} getOwnedElements ::djdsl::v1e::Choice] {
           if {[$c context isSet]} {
@@ -808,12 +837,6 @@ void:	_			<- <space>*;
 
   ? {llength [$tvl2 getOwnedElements]} 9
 
-  # The following (non-hierarchical) constraints can be specified (choice equivalent):
-  # - and     ... [1,1]
-  # - or      ... [0,1]
-  # - not     ... [0,0]
-  # - implies ... (not/or) [0,1] / 0,0]
-
   set constrainedModel [Model newFromScript2 {
     #// constrM //
     Root "Graph" {
@@ -901,6 +924,43 @@ void:	_			<- <space>*;
   # TODO:
   # ? {$constrainedModel2 equiv $constrainedModel} 1; # === BDD1 BDD2
 
+  # TODO: simplify implementation using sth. akin of
+  #   nx::Class create Model; use the Model instance as visitor?
+  # nx::Class create Model::Element {
+  #     :protected method __object_configureparameter {} {
+  # 	set spec [next]
+  # 	lreplace $spec[set spec {}] end end foo:optional,alias
+  #     }
+  #     ::nsf::parameter::cache::classinvalidate [current]
+  #     :protected method foo {script} {
+  # 	apply [list {} $script ::]
+  #     # ${:model} eval $script
+  #     }
+  #     :public method init {} {
+  # 	puts [:info class]([self])=init
+  #     }
+  # }
+  
+  # nx::Class create Feature -superclasses Model::Element {
+  #     :property name
+  #     :protected method foo {script} {
+  # 	next
+  #     }
+  # }
+  
+  # nx::Class create Choice -superclasses Model::Element {
+  #     :property upper
+  #     :property lower
+  #     :protected method foo {script} {
+  # 	next
+  #     }
+  # }
+  
+  # Feature new -name "X" {
+  #     Choice new -upper 1 -lower 2 {
+  # 	Feature new -name "Z"
+  #     }
+  # }  
 }
 
 # Local variables:

@@ -1,4 +1,4 @@
-package require tcltest 2.2
+package require tcltest
 eval ::tcltest::configure $argv
 
 package require djdsl::v1e
@@ -147,14 +147,14 @@ namespace eval ::djdsl::v1e::test {
 
   test nesting-API-1.4 {} \
       -body {
+        # Structurally valid (though cyclic), but tautological
         set m1 [Model with -rootFeature "X" {
           Choice with -lower 1 -upper 1 {
             Feature with -name "X"
           }}]
+        llength [$m1 getOwnedElements Feature]
       } \
-      -returnCodes 1 \
-      -match glob \
-      -result "Features must have unique names."
+      -result 1; # only one Feature created
 
   test nesting-API-1.5 {} \
       -body {
@@ -163,10 +163,9 @@ namespace eval ::djdsl::v1e::test {
             Feature with -name "Y"
             Feature with -name "Y"
           }}]
+        llength [$m1 getOwnedElements Feature]
       } \
-      -returnCodes 1 \
-      -match glob \
-      -result "Features must have unique names."
+      -result 2; # two feature nodes
   
   test bdd-1.1 {} \
       -body {
@@ -206,7 +205,7 @@ namespace eval ::djdsl::v1e::test {
             }
           }
         }]
-        puts [join [$m1 getValidConfigurations 10] \n]
+        # puts [join [$m1 getValidConfigurations 10] \n]
         list [$m1 isValid] [$m1 nrValidConfigurations]
       } \
       -cleanup $CLEANUP \
@@ -295,9 +294,115 @@ namespace eval ::djdsl::v1e::test {
       -cleanup $CLEANUP \
       -result 12-7-2-1-32
 
+  #
+  # Tests on textual vs. choice constraints
+  #
+
+  set baseModel {
+    Root "" {
+      Choice -lower 0 -upper 1 {
+        Feature -name "A"
+      }
+      Choice -lower 0 -upper 1 {
+        Feature -name "B"
+      }
+    }
+  }
+
+  
+  test constraints-1.1 {} \
+      -body {
+        set m1 [Model newFromScript2 $baseModel]
+        list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+      } \
+      -cleanup $CLEANUP \
+      -result 3-3-0-1-4
+  
+  # The following (non-hierarchical) constraints can be specified (choice equivalent):
+  # - and     ... [1,1]
+
+  test constraints-1.2 {} \
+      -body {
+        set m1 [Model newFromScript2 $baseModel]
+        $m1 addFromScript {
+          Choice with -lower 1 -upper 1 {
+            Feature with -name "A"
+          }
+          Choice with -lower 1 -upper 1 {
+            Feature with -name "B"
+          }
+        }
+        list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+      } \
+      -cleanup $CLEANUP \
+      -result 3-5-0-1-1
+    
+  # - or      ... [0,1]
+
+    test constraints-1.3 {} \
+      -body {
+        set m1 [Model newFromScript2 $baseModel]
+        $m1 addFromScript {
+          Choice with -lower 1 -upper 2 {
+            Feature with -name "A"
+            Feature with -name "B"
+          }
+        }
+        list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+      } \
+      -cleanup $CLEANUP \
+      -result 3-4-0-1-3
+  
+  # - not     ... [0,0]
+
+  test constraints-1.3 {} \
+      -body {
+        set m1 [Model newFromScript2 $baseModel]
+        $m1 addFromScript {
+          Choice with -lower 0 -upper 0 {
+            Feature with -name "A"
+          }
+        }
+        list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+      } \
+      -cleanup $CLEANUP \
+      -result 3-4-0-1-2
+  
+  # - implies ... (not/or) [0,1] / 0,0]
+
+  test constraints-1.4 {} \
+      -setup {
+        set m1 [Model newFromScript2 $baseModel]
+      } \
+      -body {
+        $m1 addFromScript {
+          Choice with -lower 1 -upper 2 {
+            Feature with {
+              Choice with -lower 0 -upper 0 {
+                Feature with -name "A"
+              }
+            }
+            Feature with -name "B"
+          }
+        }
+        list [llength [$m1 getOwnedElements Feature]] \
+            [llength [$m1 getOwnedElements Choice]] \
+            [llength [$m1 getOwnedElements Constraint]] \
+            [$m1 isValid] \
+            [$m1 nrValidConfigurations]
+      } \
+      -cleanup $CLEANUP \
+      -result {4 5 0 1 3}
+
+  # TODO: implement this
+#    The multiplicity 0,2 is not implemented.
+#     while executing
+# "throw {V1E BDD NOTIMPLEMENTED} "The multiplicity [$c lower get],[$c upper get] is not implemented.""
   
   cleanupTests
 }
+
+
 
 # namespace delete ::v1e::test
 
