@@ -3,15 +3,17 @@
 package req Tcl 8.6
 
 apply {{version code {test ""}} {
-  set script [info script]
+    set script [file normalize [info script]]
   set modver [file root [file tail $script]]
   lassign [split $modver -] ns relVersion
+  set prj [file tail [file dirname $script]]
+  
   if {$relVersion ne ""} {
     set version $relVersion
   }
 
-  package provide $ns $version
-  namespace eval $ns $code
+  package provide ${prj}::$ns $version
+  namespace eval ${prj}::$ns $code
 
   if {[info exists ::argv0] && $::argv0 eq [uplevel 1 {info script}]} {
     if {"--release" in $::argv} {
@@ -34,7 +36,7 @@ apply {{version code {test ""}} {
     } else {
       if {$test ne ""} {
         package req tcltest
-        namespace eval ::${ns}::test {
+        namespace eval ::${prj}::${ns}::test {
           namespace import ::tcltest::*
 
           customMatch stripNs [list apply {{testNs expected actual} {
@@ -50,19 +52,24 @@ apply {{version code {test ""}} {
           }          
         }
         
-        namespace eval ::${ns}::test [list namespace import ::${ns}::*]
-        namespace eval ::${ns}::test $test
+        namespace eval ::${prj}::${ns}::test [list namespace import ::${prj}::${ns}::*]
+        namespace eval ::${prj}::${ns}::test $test
         
-        namespace eval ::${ns}::test cleanupTests
-        namespace delete ::${ns}::test
+        namespace eval ::${prj}::${ns}::test cleanupTests
+        namespace delete ::${prj}::${ns}::test
       }
     }
   }
 } ::} 0.1 {
 
   package req nx
+
+
+  nx::Class create AssetElement -superclasses nx::Class
+  nx::Class create Role -superclasses AssetElement
+  nx::Class create Classifier -superclasses Role
   
-  nx::Class create Collaboration -superclass ::nx::Class {
+  nx::Class create Collaboration -superclasses AssetElement {
     :public method create args {
       if {[:info class] eq [current class]} {
         throw {DJDSL ABSTRACT} "Collaboration [self] cannot be instantiated directly"
@@ -76,7 +83,7 @@ apply {{version code {test ""}} {
     :public method init {} {
       set body "[self] new {*}\$args"
       ${:owning} public object method "new [string tolower [namespace tail [self]]]" args $body
-      foreach c [:info children -type ::nx::Class] {
+      foreach c [:info children -type Role] {
         :createFactory $c
       }
       next
@@ -152,19 +159,9 @@ apply {{version code {test ""}} {
           -context $ctx
     }
   }
-
-  nx::Class create Testable {
-    :public method "info precedence" {} {
-      set p [lsearch -exact -inline -all -not [next] [current class]]
-      string map [list [uplevel 1 {namespace current}] ""] $p
-    }
-
-    :public method "info class" {} {
-      string map [list [uplevel 1 {namespace current}] ""] [next]
-    }
-  }
   
-  namespace export Asset Composition Collaboration LanguageModel Testable
+  namespace export Asset AssetElement Composition Collaboration LanguageModel \
+      Classifier Role
 } {
 
   # Leads to "::nsf::log Warning {cycle in the mixin graph list detected for class ::nx::Object}"
@@ -181,20 +178,21 @@ apply {{version code {test ""}} {
     LanguageModel create [self]::Graph {
       :property name
       :property -incremental edges:0..n
-      Class create [self]::A
-      Class create [self]::Node
-      Class create [self]::Edge {
+
+      Classifier create [self]::A
+      Classifier create [self]::Node
+      Classifier create [self]::Edge {
         :property -accessor public from
         :property -accessor public to
       }
     }
     
     Collaboration create weighted {
-      Class create [self]::Weight {
+      Classifier create [self]::Weight {
         :property -accessor public {value 0}
       }
-      Class create [self]::A
-      Class create [self]::Edge -superclasses [self]::A {
+      Role create [self]::A
+      Role create [self]::Edge -superclasses [self]::A {
         :property -accessor public weight:object,type=Weight
       }
     }
@@ -225,17 +223,17 @@ apply {{version code {test ""}} {
   ? {$n1 info precedence} \
       "::WeightedGraphs::Graph::Node ::Graphs::Graph::Node ::nx::Object"
 
-? {$e info precedence} \
+  ? {$e info precedence} \
       "::WeightedGraphs::Graph::Edge ::weighted::Edge ::weighted::A ::Graphs::Graph::Edge ::nx::Object"
   
   Asset create Colours {
     Collaboration create coloured {
-      nx::Class create [self]::Color {
+      Classifier create [self]::Color {
         :property -accessor public {value 0}
       }
-      nx::Class create [self]::B
-      nx::Class create [self]::Edge -superclasses [self]::B {
-      :property -accessor public colour:object,type=[namespace current]::Color
+      Classifier create [self]::B
+      Role create [self]::Edge -superclasses [self]::B {
+        :property -accessor public colour:object,type=[namespace current]::Color
       }
       :public method colored {} {return 1}
     }
@@ -249,4 +247,9 @@ apply {{version code {test ""}} {
   ? {$cg info precedence} \
       "${ccomp}::Graph ::coloured ::Graphs::Graph ::nx::Object"
 }
-  
+
+# Local variables:
+#    mode: tcl
+#    tcl-indent-level: 2
+#    indent-tabs-mode: nil
+# End:
