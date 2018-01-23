@@ -387,32 +387,34 @@ apply {{version code {test ""}} {
       return [$bdd computeValidConfigurations $n]
     }
 
-    :public method equiv {that:object,type=Model} {
+    # :public method equiv {that:object,type=Model} {
+    #   set bdd [: -local requireBDD]
+    #   return [$bdd ]
+    # }
+
+    :public method asDot {} {
       set bdd [: -local requireBDD]
-      return [$bdd ]
+      return [$bdd asDot [self]]
     }
-
-
-
+    
     :private method requireBDD {} {
       if {![info exists :bdd]} {
-        set :bdd [[current class]::BDD new -model [self]]
+        set :bdd [[current class]::BDDSystem new -model [self]]
       }
       return ${:bdd}
     }
-
+    
     #
     # A slim component wrapper around tclbdd's TclOO facility, plus helpers.
     #
     
-    nx::Class create [self]::BDD {
+    nx::Class create [self]::BDDSystem {
       :property model:object,type=[:info parent]
-      # :variable rootExpr C0
-
+      
       :public method isSatisfiable {} {
         return [${:system} satisfiable ${:model}]
       }
-
+      
       :public method satCount {} {
         return [${:system} satcount ${:model}]
       }
@@ -461,7 +463,8 @@ apply {{version code {test ""}} {
         set rootFeat [${:model} root get]
         
         # FIX:
-        set :vars [lsort -unique [${:model} getOwnedElements ::djdsl::v1e::Feature]]
+        # set :vars [lsort -unique [${:model} getOwnedElements ::djdsl::v1e::Feature]]
+        set :vars [${:model} getOwnedElements ::djdsl::v1e::Feature]
         
         set pos 0
         foreach f ${:vars} {
@@ -544,6 +547,7 @@ apply {{version code {test ""}} {
 
           ${:system} & ${:model} ${:model} $c
           # puts [${:system} dump ${:model}]
+          # puts >>>>[:asDot $c]
         }
 
         # inject the constraints feature expressions into the BDD
@@ -657,8 +661,46 @@ void:	_			<- <space>*;
         # TODO: Check for valid feature names?
         set name [string range ${:fexpr} $from $to]
         ${:model} featureLookup $name
-      } 
-    } 
+      }
+
+      #
+      # Helpers
+      #
+      # DOT printer: `dot -Nfontname=FreeSans -Tsvg`
+      :public method asDot {bdd} {
+        set dump [dict create {*}[${:system} dump $bdd]]
+        
+        dict unset dump 0
+        dict unset dump 1
+        
+        append dot "digraph \"$bdd\" {" \n;
+        append dot "0 \[shape=box, label=\"0\", style=filled, shape=box, height=0.3, width=0.3\];" \n;
+        append dot "1 \[shape=box, label=\"1\", style=filled, shape=box, height=0.3, width=0.3\];" \n
+        
+        set levels [dict create]
+        dict for {node dat} $dump {
+          lassign $dat varIdx lo hi
+          set feat [lindex ${:vars} $varIdx]
+          set label ""; # unnamed features (helpers) remain blank
+          if {[$feat name isSet]} {
+            set label [$feat name get]
+          }
+          append dot "$node \[label=\"$label\"\];" \n
+          append dot "$node -> $lo \[style=dotted\];" \n
+          append dot "$node -> $hi \[style=filled\];" \n
+          
+          dict lappend levels $varIdx $node
+        }
+        
+        dict for {level nodes} $levels {
+          append dot "{rank = same; [join $nodes ;]}"
+        }
+        
+        append dot "}"
+        return $dot
+        
+      }
+    }; # BDDSystem
   }
     
   nx::Class create Model::Element {
@@ -785,6 +827,8 @@ void:	_			<- <space>*;
     }
     #// end //
   }]
+
+  # puts [$gpl asDot]
 
   ? {llength [$gpl getOwnedElements]} 6
 
