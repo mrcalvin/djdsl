@@ -78,24 +78,39 @@ apply {{version code {test ""}} {
 	condition:0..*,object,type=[namespace current]::Condition
 
     AssetElement public method validate {e:object} {
+      set f ""
+      set validated 0
       if {[info exists :condition] && [llength ${:condition}]} {
         foreach c ${:condition} {
           set exprStr [$c bodyExpression get]
           append f [list if !($exprStr) [list return -code error -errorcode [list DJDSL CTX VIOLATED $c] "condition '$exprStr' failed"]] \;
         }
+        
         # puts $f
-        try {
-          $e eval $f
-          return 1
-        } trap {DJDSL CTX VIOLATED} {e opts} {
-          # propagate violation
-          return -options $opts $e
-        } trap {} {e opts} {
-          # wrap any other error report
-          throw {DJDSL CTX FAILED} $e
+        if {$f eq ""} {
+          set validated 1
+        } else {
+
+          if {![info complete $f]} {
+            throw [list DJDSL CTX FAILED SCRIPT $f] "Validation script is not complete."
+          }
+        
+          try {
+            $e eval $f
+            set validated 1
+          } trap {DJDSL CTX VIOLATED} {e opts} {
+            # propagate violation
+            return -options $opts $e
+          } trap {} {e opts} {
+            # wrap any other error report
+            throw {DJDSL CTX FAILED EXPR} $e
+          }
         }
+      } else {
+        set validated 1
       }
-      next
+      set n [next]
+      expr {$validated && ($n eq "" ? 1 : $n)}
     }
 
     Asset public method validate {e:object} {
@@ -104,7 +119,7 @@ apply {{version code {test ""}} {
       if {[$assetElement] info has type AssetElement} {
         $assetElement validate $e
       } else {
-        throw {DJDSL CTX NOVALIDATION $e} "Validation is not supported for '$assetElement' instance."
+        throw {DJDSL CTX UNSUPPORTED $e} "Validation is not supported for '$assetElement' instance."
       }
     }
 
