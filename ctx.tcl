@@ -13,7 +13,7 @@ apply {{version code {test ""}} {
   }
 
   package provide ${prj}::$ns $version
-  namespace eval ${prj}::$ns $code
+  # namespace eval ${prj}::$ns $code
 
   if {[info exists ::argv0] && $::argv0 eq [uplevel 1 {info script}]} {
     if {"--release" in $::argv} {
@@ -36,6 +36,10 @@ apply {{version code {test ""}} {
     } else {
       if {$test ne ""} {
         package req tcltest
+        ::tcltest::configure {*}$::argv
+        ::tcltest::loadTestedCommands
+        
+        namespace eval ${prj}::$ns $code
         namespace eval ::${prj}::${ns}::test {
           namespace import ::tcltest::*
 
@@ -59,11 +63,57 @@ apply {{version code {test ""}} {
         namespace delete ::${prj}::${ns}::test
       }
     }
+  } else {
+    namespace eval ${prj}::$ns $code
   }
 } ::} 0.1 {
 
     package req djdsl::lm
     namespace import ::djdsl::lm::*
+
+
+    nx::Object create context {
+      set :frames [list]
+
+      :require namespace
+      namespace eval [self] {
+        namespace path {}
+      }
+      
+      :public object method set {next element validators} {
+
+        set newFrame [list $next $element $validators 0]
+        set :frames [linsert ${:frames}[set :frames {}] 0 $newFrame]
+        
+      }
+      :public object method clear {} {
+        set :frames [lassign ${:frames} currentFrame]
+        return [lindex $currentFrame end]
+        
+      }
+      :public object method original args {
+        # peek current frame
+        set currentFrame [lindex ${:frames} 0]
+        lassign $currentFrame next element validators counter
+        
+        incr counter
+        # puts stderr "EXPLICIT($counter) $next validate $element $validators"
+        try {
+          if {${next} ne ""} {
+            ${next} validate ${element} ${validators}
+          }
+          return 1
+        } trap {DJDSL CTX VIOLATED} {e opts} {
+          return 0
+        } on error {e opts} {
+          return -options $opts $e
+        } finally {
+          lset currentFrame 3 $counter
+          lset :frames 0 $currentFrame
+        }
+      }
+      interp alias {} [self]::next {} [self] original
+    }
 
     nx::Class create Condition {
       :property label
@@ -77,54 +127,96 @@ apply {{version code {test ""}} {
 	-incremental \
 	condition:0..*,object,type=[namespace current]::Condition
 
-    AssetElement public method validate {e:object} {
+    AssetElement protected method compileScript {} {
       set f ""
-      set validated 0
       if {[info exists :condition] && [llength ${:condition}]} {
         foreach c ${:condition} {
           set exprStr [$c bodyExpression get]
-          append f [list if !($exprStr) [list return -code error -errorcode [list DJDSL CTX VIOLATED $c] "condition '$exprStr' failed"]] \;
+          set thenScript [list return -level 0 -code error \
+                              -errorcode [list DJDSL CTX VIOLATED $c] \
+                              "condition '$exprStr' failed"]
+          append f [list if !($exprStr) $thenScript] \;
         }
-        
-        # puts $f
-        if {$f eq ""} {
-          set validated 1
-        } else {
-
-          if {![info complete $f]} {
-            throw [list DJDSL CTX FAILED SCRIPT $f] "Validation script is not complete."
+        if {![info complete $f]} {
+          throw [list DJDSL CTX FAILED SCRIPT $f] "Validation script is not complete."
+        }
+      }
+      return $f
+    }
+    
+    AssetElement public method validate {-or:switch e:object validators} {
+      set explicitNexts 0
+      set validators [lassign $validators next]
+      if {$next ne "" && ![$next info has type [current class]]} {
+        set next ""
+      }
+      set f [:compileScript]
+      if {$f ne ""} {
+        try {
+          # puts stderr "([self]) ::djdsl::ctx::context set $next $e $validators"
+          ::djdsl::ctx::context set $next $e $validators
+          # puts stderr "[list apply [list {} $f ::djdsl::ctx::context]]"
+          $e eval [list apply [list {} $f ::djdsl::ctx::context]]
+        } trap {DJDSL CTX VIOLATED} {errMsg opts} {
+          # propagate violation
+          if {!$or || $next eq ""} {
+            dict with opts {lappend -errorcode $e}
+            return -options $opts $errMsg
           }
-        
-          try {
-            $e eval $f
-            set validated 1
-          } trap {DJDSL CTX VIOLATED} {e opts} {
-            # propagate violation
+        } trap {} {errMsg opts} {
+          # wrap any other error report
+          throw {DJDSL CTX FAILED EXPR} $errMsg
+        } finally {
+          set explicitNexts [::djdsl::ctx::context clear]
+        }
+      }
+
+      # puts stderr "+++++ explicits? $explicitNexts"
+      if {!$explicitNexts && $next ne ""} {
+        $next validate -or=$or $e $validators
+      }
+      
+      return
+    }
+
+    LanguageModel public method validate {-or:switch e:object validators} {
+      next
+      foreach el [$e info children] {
+        # TODO: -type filter for "info precedence"?
+        set validators [lmap a [$el info precedence] {
+          if {[$a info has type ::djdsl::lm::AssetElement]} {
+            set a
+          } else {
+            continue
+          }}]
+        if {![llength $validators]} continue;
+        set nextValidators [lassign $validators assetElement]
+        $assetElement validate -or=$or $el $nextValidators
+      }
+    }
+    
+    Asset public method validate {-blame:switch -or:switch e:object} {
+      # TODO: -type filter for "info precedence"?
+      set nextValidators [lassign [$e info precedence] assetElement]
+      if {[$assetElement info has type AssetElement]} {
+        try {
+          $assetElement validate -or=$or $e $nextValidators
+          return 1
+        } trap {DJDSL CTX VIOLATED} {e opts} {
+          if {$blame} {
             return -options $opts $e
-          } trap {} {e opts} {
-            # wrap any other error report
-            throw {DJDSL CTX FAILED EXPR} $e
+          } else {
+            return 0
           }
         }
       } else {
-        set validated 1
-      }
-      set n [next]
-      expr {$validated && ($n eq "" ? 1 : $n)}
-    }
-
-    Asset public method validate {e:object} {
-      # instances of AssetElement instantiations
-      set assetElement [e info class]
-      if {[$assetElement] info has type AssetElement} {
-        $assetElement validate $e
-      } else {
-        throw {DJDSL CTX UNSUPPORTED $e} "Validation is not supported for '$assetElement' instance."
+        throw {DJDSL CTX UNSUPPORTED $e} \
+            "Validation is not supported for '$assetElement' instance."
       }
     }
-
+    
     namespace export Condition
-} {
+  } {
   
   
 }
