@@ -81,7 +81,7 @@ apply {{version code {test ""}} {
   nx::Class create LanguageModel -superclass Collaboration {
     :property {owning:object,type=Asset,substdefault "[:info parent]"}
     :public method init {} {
-      set body "[self] new {*}\$args"
+      set body "[self] new -childof ${:owning} {*}\$args"
       ${:owning} public object method "new [string tolower [namespace tail [self]]]" args $body
       foreach c [:info children -type Role] {
         :createFactory $c
@@ -93,7 +93,7 @@ apply {{version code {test ""}} {
       # Create accessors for the collaboration parts
       set name [namespace tail $nested]
       :public method "new [string tolower $name]" args \
-          [subst {[self]::$name new {*}\$args}]
+          [subst {[self]::$name new -childof \[self\] {*}\$args}]
     }
   }
 
@@ -121,16 +121,19 @@ apply {{version code {test ""}} {
       # (1) add the collaboration class to the extension list of the language model and 
       # (2) create/extend the refinements list for the nested role classes.
       foreach collaboration $featureModules {
-        dict lappend d extension $baseClass $collaboration
-        
-        foreach roleClass [$collaboration info children -type ::nx::Class] {
+        # puts stderr "dict lappend d extension $baseClass $collaboration"
+        # dict lappend d extension $baseClass $collaboration
+        dict with d extension { lappend $baseClass $collaboration }
+        foreach roleClass [$collaboration info children -type ::nx::Class] {          
           set name [$roleClass info name]
           if {[dict exists $d class $name]} {
             # known role class
-            dict lappend d extension $name $roleClass
+            dict with d extension { lappend $name $roleClass }
+            # dict set d extension $name $roleClass
           } else {
             # unknown role class
             dict set d class $name $roleClass
+            # dict lappend d extension $name ""
             dict set d extension $name ""
           }
         }
@@ -140,14 +143,15 @@ apply {{version code {test ""}} {
 
     :private method weave {-baseClass -featureModules -context} {
       set d [: -local computeExtensionHierarchy]
+
       set collaborationClassNames [dict keys [dict get $d class]]
       # Let the resulting language model (context) inherit from the extension classes and the base class.
-      set superclasses [list {*}[dict get $d extension ${:base}] ${:base}]
+      set superclasses [list {*}[concat {*}[dict get $d extension ${:base}]] ${:base}]
       nsf::relation::set $context superclass [list {*}$superclasses {*}[$context info superclasses]]
-      
+
       foreach name $collaborationClassNames {
         set supers [list {*}[dict get $d extension $name] [dict get $d class $name]]
-        set cls [nx::Class create ${context}::$name -superclasses $supers]
+        set cls [Classifier create ${context}::$name -superclasses $supers]
         $context createFactory $cls
       }
     }
@@ -239,7 +243,7 @@ apply {{version code {test ""}} {
     }
   }
   
-  set ccomp [Composition new -binds [Graphs] \
+  set ccomp [Composition new -binds [list [Graphs] [Colours]] \
                  -base [Graphs::Graph] \
                  -features [coloured]]
   
