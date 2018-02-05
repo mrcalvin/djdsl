@@ -64,8 +64,22 @@ apply {{version code {test ""}} {
 
   package req nx
 
+  nx::Class create Container {
+    :protected method __object_configureparameter {} {
+      set spec [next]
+      lreplace $spec[set spec {}] end end contains:alias,optional
+    }
+    ::nsf::parameter::cache::classinvalidate [current]
+    :protected method contains args {
+      namespace eval [self] { namespace path ::djdsl::lm }
+      next
+    }
+  }
+  
+  nx::Class create Asset -superclasses Container
 
-  nx::Class create AssetElement -superclasses nx::Class
+  nx::Class create AssetElement -superclasses {Container nx::Class}
+  
   nx::Class create Role -superclasses AssetElement
   nx::Class create Classifier -superclasses Role
   
@@ -97,9 +111,7 @@ apply {{version code {test ""}} {
     }
   }
 
-  
-  nx::Class create Asset 
-  
+   
   nx::Class create Composition -superclasses Asset {
     :property binds:object,type=Asset,1..*
     :property {base:class,required}
@@ -179,24 +191,24 @@ apply {{version code {test ""}} {
   #// assets //#
   Asset create Graphs {
     
-    LanguageModel create [self]::Graph {
-      :property name
-      :property -incremental edges:0..n
+    LanguageModel create Graph {
+      :property name:alnum
+      :property -incremental edges:object,type=Edge,0..n
 
-      Classifier create [self]::A
-      Classifier create [self]::Node
-      Classifier create [self]::Edge {
-        :property -accessor public from
-        :property -accessor public to
+      Classifier create A
+      Classifier create Node
+      Classifier create Edge {
+        :property -accessor public a:object,type=Node
+        :property -accessor public b:object,type=Node
       }
     }
     
     Collaboration create weighted {
-      Classifier create [self]::Weight {
-        :property -accessor public {value 0}
+      Classifier create Weight {
+        :property -accessor public {value:integer 0}
       }
-      Role create [self]::A
-      Role create [self]::Edge -superclasses [self]::A {
+      Role create A
+      Role create Edge -superclasses A {
         :property -accessor public weight:object,type=Weight
       }
     }
@@ -211,33 +223,34 @@ apply {{version code {test ""}} {
   Composition create WeightedGraphs \
       -binds Graphs \
       -base [Graphs::Graph] \
-      -features [weighted]
+      -features [Graphs::weighted]
   #// end //#
 
   #// comp2 //#
   set wg [WeightedGraphs new graph -name "wg"]
   set n1 [$wg new node]
   set n2 [$wg new node]
-  set e [$wg new edge -from $n1 -to $n2 -weight [$wg new weight -value 1]]
+  set e [$wg new edge -a $n1 -b $n2 -weight [$wg new weight -value 1]]
   #// end //#
 
   ? {$wg info precedence} \
-      "::WeightedGraphs::Graph ::weighted ::Graphs::Graph ::nx::Object"
+      "::WeightedGraphs::Graph ::Graphs::weighted ::Graphs::Graph ::nx::Object"
 
   ? {$n1 info precedence} \
       "::WeightedGraphs::Graph::Node ::Graphs::Graph::Node ::nx::Object"
 
   ? {$e info precedence} \
-      "::WeightedGraphs::Graph::Edge ::weighted::Edge ::weighted::A ::Graphs::Graph::Edge ::nx::Object"
+      "::WeightedGraphs::Graph::Edge ::Graphs::weighted::Edge ::Graphs::weighted::A ::Graphs::Graph::Edge ::nx::Object"
   
   Asset create Colours {
+    puts [namespace current]
     Collaboration create coloured {
-      Classifier create [self]::Color {
+      Classifier create Color {
         :property -accessor public {value 0}
       }
-      Classifier create [self]::B
-      Role create [self]::Edge -superclasses [self]::B {
-        :property -accessor public colour:object,type=[namespace current]::Color
+      Classifier create B
+      Role create Edge -superclasses B {
+        :property -accessor public colour:object,type=Color
       }
       :public method colored {} {return 1}
     }
@@ -245,11 +258,11 @@ apply {{version code {test ""}} {
   
   set ccomp [Composition new -binds [list [Graphs] [Colours]] \
                  -base [Graphs::Graph] \
-                 -features [coloured]]
+                 -features [Colours::coloured]]
   
   set cg [$ccomp new graph -name "cg"]
   ? {$cg info precedence} \
-      "${ccomp}::Graph ::coloured ::Graphs::Graph ::nx::Object"
+      "${ccomp}::Graph ::Colours::coloured ::Graphs::Graph ::nx::Object"
 }
 
 # Local variables:
