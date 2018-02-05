@@ -357,12 +357,102 @@ namespace eval ::djdsl::ctx::test {
         
       } -cleanup $CLEANUP -result "1 1 0 1";
 
+  test ctx-5.1 "Basic constraints" \
+      -setup $SETUP \
+      -body {
+        ${lm1}::Graph condition add [Condition new -bodyExpression {
+          [llength [:edges get]]*2 == [llength [:nodes get]]
+        }]
+
+        ${lm1}::Graph::Edge condition add [Condition new -bodyExpression {
+          [:a get] ne [:b get]
+        }]
+        
+        set (subject) [$lm1 new graph -name "g"]
+        $(subject) nodes add [set (n1) [$(subject) new node]]
+        $(subject) nodes add [set (n2) [$(subject) new node]]
+        $(subject) edges add [$(subject) new edge -a $(n1) -b $(n2)]
+
+        lappend () [$lm1 validate $(subject)]
+
+        set (p1) [$(subject) info lookup variables nodes]
+        $(subject) eval {set :nodes {1 2}}
+
+        lappend () [$lm1 validate $(subject)]
+        catch [list $lm1 validate -blame $(subject)] (->) (opts)
+        lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
+        lappend () [expr {$(actualCond) eq $(p1) &&
+                          $(actualChecked) eq $(subject)}]
+        
+      } -cleanup $CLEANUP -result "1 0 1";
+
+    test ctx-5.2 "Basic constraints (multi-valued)" \
+      -setup $SETUP \
+      -body {
+        ${lm1}::Graph condition add [Condition new -bodyExpression {
+          [llength [:edges get]]*2 == [llength [:nodes get]]
+        }]
+
+        ${lm1}::Graph::Edge condition add [Condition new -bodyExpression {
+          [:a get] ne [:b get]
+        }]
+        
+        set (subject) [$lm1 new graph -name "g"]
+        $(subject) nodes add [set (n1) [$(subject) new node]]
+        $(subject) nodes add [set (n2) [$(subject) new node]]
+        $(subject) edges add [$(subject) new edge -a $(n1) -b $(n2)]
+
+        lappend () [$lm1 validate $(subject)]
+
+        set (p1) [$(subject) info lookup variables nodes]
+        $(subject) eval {set :nodes "\{${:nodes}"}
+
+        lappend () [$lm1 validate $(subject)]
+        catch [list $lm1 validate -blame $(subject)] (->) (opts)
+        lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
+        lappend () [expr {$(actualCond) eq $(p1) &&
+                          $(actualChecked) eq $(subject)}]
+        
+      } -cleanup $CLEANUP -result "1 0 1";
+
+  test ctx-5.3 "Basic constraints (defaults)" \
+      -setup $SETUP \
+      -body {
+        ${lm1}::Graph condition add [Condition new -bodyExpression {
+          [llength [:edges get]]*2 == [llength [:nodes get]]
+        }]
+        
+        ${lm1}::Graph::Edge condition add [Condition new -bodyExpression {
+          [:a get] ne [:b get]
+        }]
+        
+        set (subject) [$lm1 new graph -name "g"]
+        $(subject) nodes add [set (n1) [$(subject) new node]]
+        $(subject) nodes add [set (n2) [$(subject) new node]]
+        $(subject) edges add [$(subject) new edge -a $(n1) -b $(n2)]
+
+        lappend () [$lm1 validate $(subject)]
+
+        set (p1) [$(subject) info lookup variables nodes]
+        $(subject) eval {unset :nodes}
+
+        lappend () [$lm1 validate $(subject)]
+        catch [list $lm1 validate -blame $(subject)] (->) (opts)
+        lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
+        lappend () [expr {$(actualCond) eq $(p1) &&
+                          $(actualChecked) eq $(subject)}]
+        
+      } -cleanup $CLEANUP -result "1 0 1";
+
+
+
   puts stderr >>>[info vars]
   # TODOS:
   # 1) test case propagation plus [next] combination
   # 2) test case: intrinsic conditions (property specs)
   # 3) test case: $comp1 validate $(subject)
   # 4) test case: basic quantifiers (forAll, collect, allInstances) for *::context namespace
+  # 5) test case: frontend syntax for entering conditions
 
 }
 

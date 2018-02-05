@@ -129,6 +129,47 @@ apply {{version code {test ""}} {
 
     AssetElement protected method compileScript {} {
       set f ""
+
+      # add "basic" constraints
+      set varSlots [:info variables]
+      foreach vs $varSlots {
+        set spec [$vs parameter]
+        set options [::nx::MetaSlot parseParameterSpec {*}$spec]
+        set name [lindex $options 0]
+        set options [lindex $options end]
+
+        if {[llength $spec] == 2} {
+          set exprStr "\[info exists :$name\]"
+          set thenScript [list return -level 0 -code error \
+                              -errorcode [list DJDSL CTX VIOLATED $vs] \
+                              "condition '$exprStr' failed"]
+          append f [list if !($exprStr) $thenScript] \;
+        }
+        
+        # Add checks for multi-valuedness == list
+        
+        if {[$vs eval {:isMultivalued}]} {
+          set exprStr "\[::string is list \${:$name}\]"
+          set thenScript [list return -level 0 -code error \
+                              -errorcode [list DJDSL CTX VIOLATED $vs] \
+                              "condition '$exprStr' failed"]
+          append f [list if !($exprStr) $thenScript] \;
+        }
+        
+        if {$options ne ""} {
+          set nspec [::nx::MetaSlot optionsToValueCheckingSpec $options]
+          set exprStr "\[::nsf::is $nspec \${:$name}\]"
+          set thenScript [list return -level 0 -code error \
+                              -errorcode [list DJDSL CTX VIOLATED $vs] \
+                              "condition '$exprStr' failed"]
+          append f [list if !($exprStr) $thenScript] \;
+        }
+             
+      # TODO: provided that type is of type "AssetElement", check
+      # also there constraints?
+
+      }
+
       if {[info exists :condition] && [llength ${:condition}]} {
         foreach c ${:condition} {
           set exprStr [$c bodyExpression get]
@@ -137,10 +178,12 @@ apply {{version code {test ""}} {
                               "condition '$exprStr' failed"]
           append f [list if !($exprStr) $thenScript] \;
         }
-        if {![info complete $f]} {
-          throw [list DJDSL CTX FAILED SCRIPT $f] "Validation script is not complete."
-        }
       }
+      
+      if {$f ne "" && ![info complete $f]} {
+        throw [list DJDSL CTX FAILED SCRIPT [self] $f] "Validation script is not complete."
+      }
+      
       return $f
     }
     
