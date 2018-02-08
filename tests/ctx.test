@@ -9,48 +9,91 @@ namespace eval ::djdsl::ctx::test {
   namespace import ::djdsl::lm::*
   namespace import ::djdsl::ctx::*
   
-  variable SETUP {set lm1 [Asset create Graphs {
-    LanguageModel create [self]::Graph {
+  variable SETUP {set (lm1) [Asset create Graphs {
+    LanguageModel create Graph {
       :property name
       :property -incremental {edges:0..*,type=Graph::Edge,substdefault {[list]}}
       :property -incremental {nodes:0..*,type=Graph::Node,substdefault {[list]}}
       
-      Classifier create [self]::Node
-      Classifier create [self]::Edge {
+      Classifier create Node
+      Classifier create Edge {
         :property -accessor public a:object,type=Node,required
         :property -accessor public b:object,type=Node,required
       }
     }
 
-    Collaboration create [self]::weighted {
-      Classifier create [self]::Weight {
+    Collaboration create weighted {
+      Classifier create Weight {
         :property -accessor public {value 0}
       }
-      Role create [self]::A
-      Role create [self]::Edge -superclasses [self]::A {
+      Role create A
+      Role create Edge -superclasses A {
         :property -accessor public weight:object,type=Weight
       }
     }
   }]
 
-    set comp1 [Composition create WeightedGraphs \
-                   -binds Graphs \
-                   -base ${lm1}::Graph \
-                   -features ${lm1}::weighted]
+    set (comp1) [Composition create WeightedGraphs \
+                     -binds Graphs \
+                     -base $(lm1)::Graph \
+                     -features $(lm1)::weighted]
   }
+
+  variable SETUP2 {
+    set (asset1) [Asset create Graphs {
+      LanguageModel create Graph {
+        :property name
+        :property -incremental {edges:0..*,type=Graph::Edge,substdefault {[list]}}
+        :property -incremental {nodes:0..*,type=Graph::Node,substdefault {[list]}}
+        
+        Classifier create Node
+        Classifier create Edge {
+          :property -accessor public a:object,type=Node,required
+          :property -accessor public b:object,type=Node,required
+        }
+      }
+      
+      Collaboration create weighted {
+        Classifier create Weight {
+          :property -accessor public {value 0}
+        }
+        Role create A
+        Role create Edge -superclasses A {
+          :property -accessor public weight:object,type=Weight
+        }
+      }
+    }]
+    
+    set (asset2) [Asset create Colours {
+      Collaboration create coloured {
+        Classifier create Color {
+          :property -accessor public {value 0}
+        }
+        Classifier create B
+        Role create Edge -superclasses B {
+          :property -accessor public \
+              colour:object,type=Color,required
+        }
+        :public method colored {} {return 1}
+      }
+    }]
+    
+    set (ccomp) [Composition new \
+                   -binds [list $(asset1) $(asset2)] \
+                   -base $(asset1)::Graph \
+                   -features [list $(asset2)::coloured $(asset1)::weighted]]
+  }
+
   
   variable CLEANUP {
-    $comp1 destroy;
-    unset comp1;
-    $lm1 destroy;
-    unset lm1;
-    unset -nocomplain _;
     if {[array exists {}]} {
       foreach k [array names {}] {
         set v [set ($k)]
-        if {[::nsf::is object $v]} {
-          # puts "          $v destroy"
-          $v destroy
+        foreach i $v {
+          if {[::nsf::is object $i]} {
+            # puts "          $i destroy"
+            $i destroy
+          }
         }
       }
       array unset {}
@@ -60,85 +103,83 @@ namespace eval ::djdsl::ctx::test {
   }
   
   test ctx-1.1 "Set up context condition" -setup $SETUP -body {
-    ${lm1}::Graph condition add [Condition new -bodyExpression {
+    $(lm1)::Graph condition add [Condition new -bodyExpression {
       [llength [:edges get]]*2 == [llength [:nodes get]]
     }]
-    llength [${lm1}::Graph condition get]
+    llength [$(lm1)::Graph condition get]
   } -cleanup $CLEANUP -result 1
 
   test ctx-1.2 "Evaluate condition against a context instance (a.k.a. validation)" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition add [Condition new -bodyExpression {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
         
-        set subject [Graphs new graph -name "g"]
-        $subject nodes add [$subject new node]
-        $subject nodes add [$subject new node]
+        set (subject) [$(lm1) new graph -name "g"]
+        $(subject) nodes add [$(subject) new node]
+        $(subject) nodes add [$(subject) new node]
 
-        # catch [list ${lm1} validate $subject] -> opts
-        # catch [list ${lm1}::Graph validate $subject] -> opts
-        # dict get $opts -errorcode
-        ${lm1} validate $subject
+        $(lm1)::Graph isValid $(subject)
       } -cleanup $CLEANUP -result 0; # -match glob -result "DJDSL CTX VIOLATED *"
 
     test ctx-1.3 "Evaluate condition against a context instance (a.k.a. validation)" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition add [Condition new -bodyExpression {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
         
-        set subject [Graphs new graph -name "g"]
-        set n1 [$subject new node]
-        set n2 [$subject new node]
-        $subject nodes add $n1
-        $subject nodes add $n2
-        $subject edges add [$subject new edge -a $n1 -b $n2]
+        set (subject) [$(lm1) new graph -name "g"]
+        set (n1) [$(subject) new node]
+        set (n2) [$(subject) new node]
+        $(subject) nodes add $(n1)
+        $(subject) nodes add $(n2)
+        $(subject) edges add [$(subject) new edge -a $(n1) -b $(n2)]
         
-        # ${lm1}::Graph validate $subject
-        ${lm1} validate $subject
+        $(lm1)::Graph isValid $(subject)
         
       } -cleanup $CLEANUP -result 1
 
   test ctx-2.1 "Basic chaining (allOf, and)" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition add [Condition new -bodyExpression {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
 
-        ${lm1}::weighted condition add [Condition new -bodyExpression {
+        $(lm1)::weighted condition add [Condition new -bodyExpression {
           false
         }]
 
-        set subject [$comp1 new graph -name "wg"]
-        set n1 [$subject new node]
-        set n2 [$subject new node]
-        set e [$subject new edge -a $n1 -b $n2 -weight [$subject new weight -value 2]]        
+        set (subject) [$(comp1) new graph -name "wg"]
+        set (n1) [$(subject) new node]
+        set (n2) [$(subject) new node]
+        set (e) [$(subject) new edge -a $(n1) -b $(n2) \
+                     -weight [$(subject) new weight -value 2]]        
         
-        $comp1 validate $subject
+        $(comp1)::Graph isValid $(subject)
         
       } -cleanup $CLEANUP -result 0
 
   test ctx-2.2 "Basic chaining (oneOf, or)" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition add [Condition new -bodyExpression {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
 
-        ${lm1}::weighted condition add [Condition new -bodyExpression {
+        $(lm1)::weighted condition add [Condition new -bodyExpression {
           false
         }]
         
-        set subject [$comp1 new graph -name "wg"]
-        set n1 [$subject new node]
-        set n2 [$subject new node]
-        set e [$subject new edge -a $n1 -b $n2 -weight [$subject new weight -value 2]]        
+        set (subject) [$(comp1) new graph -name "wg"]
+        set (n1) [$(subject) new node]
+        set (n2) [$(subject) new node]
+        set (e) [$(subject) new edge -a $(n1) -b $(n2) \
+                     -weight [$(subject) new weight -value 2]]        
         
-        $comp1 validate -or $subject
+        $(comp1)::Graph isValid -or $(subject)
         
       } -cleanup $CLEANUP -result 1
 
@@ -146,20 +187,21 @@ namespace eval ::djdsl::ctx::test {
   test ctx-2.3 "Basic chaining (oneOf, or) fails" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition add [Condition new -bodyExpression {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]] && false
         }]
 
-        ${lm1}::weighted condition add [Condition new -bodyExpression {
+        $(lm1)::weighted condition add [Condition new -bodyExpression {
           false
         }]
         
-        set subject [$comp1 new graph -name "wg"]
-        set n1 [$subject new node]
-        set n2 [$subject new node]
-        set e [$subject new edge -a $n1 -b $n2 -weight [$subject new weight -value 2]]        
+        set (subject) [$(comp1) new graph -name "wg"]
+        set (n1) [$(subject) new node]
+        set (n2) [$(subject) new node]
+        set (e) [$(subject) new edge -a $(n1) -b $(n2) \
+                     -weight [$(subject) new weight -value 2]]
         
-        $comp1 validate -or $subject
+        $(comp1)::Graph isValid -or $(subject)
         
       } -cleanup $CLEANUP -result 0
 
@@ -168,124 +210,75 @@ namespace eval ::djdsl::ctx::test {
     test ctx-3.1 "Basic combination" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition set [Condition new -bodyExpression {
+        $(lm1)::Graph condition set [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
         
-        set subject [$comp1 new graph -name "wg"]
-        set n1 [$subject new node]
-        set n2 [$subject new node]
-        set e [$subject new edge -a $n1 -b $n2 -weight [$subject new weight -value 2]]
+        set (subject) [$(comp1) new graph -name "wg"]
+        set (n1) [$(subject) new node]
+        set (n2) [$(subject) new node]
+        set (e) [$(subject) new edge -a $(n1) -b $(n2) \
+                     -weight [$(subject) new weight -value 2]]
         
-        lappend _ [$comp1 validate $subject]
+        lappend () [$(comp1)::Graph isValid $(subject)]
 
-        ${lm1}::weighted condition set [Condition new -bodyExpression {
+        $(lm1)::weighted condition set [Condition new -bodyExpression {
           [next] && false
         }]
 
-        lappend _ [$comp1 validate $subject]
+        lappend () [$(comp1)::Graph isValid $(subject)]
 
-        ${lm1}::weighted condition set [Condition new -bodyExpression {
+        $(lm1)::weighted condition set [Condition new -bodyExpression {
           [next] || false
         }]
 
-        lappend _ [$comp1 validate $subject]
+        lappend () [$(comp1)::Graph isValid $(subject)]
         
       } -cleanup $CLEANUP -result "1 0 1"
   
   test ctx-3.2 "Basic combination (2+ levels)" \
-      -setup {
-
-        set asset1 [Asset create Graphs {
-          LanguageModel create [self]::Graph {
-            :property name
-            :property -incremental {edges:0..*,type=Graph::Edge,substdefault {[list]}}
-            :property -incremental {nodes:0..*,type=Graph::Node,substdefault {[list]}}
-            
-            Classifier create [self]::Node
-            Classifier create [self]::Edge {
-              :property -accessor public a:object,type=Node,required
-              :property -accessor public b:object,type=Node,required
-            }
-          }
-          
-          Collaboration create [self]::weighted {
-            Classifier create [self]::Weight {
-              :property -accessor public {value 0}
-            }
-            Role create [self]::A
-            Role create [self]::Edge -superclasses [self]::A {
-              :property -accessor public weight:object,type=Weight
-            }
-          }
-        }]
-        
-        set asset2 [Asset create Colours {
-          Collaboration create [self]::coloured {
-            Classifier create [self]::Color {
-              :property -accessor public {value 0}
-            }
-            Classifier create [self]::B
-            Role create [self]::Edge -superclasses [self]::B {
-              :property -accessor public \
-                  colour:object,type=Color,required
-            }
-            :public method colored {} {return 1}
-          }
-        }]
-         
-        set ccomp [Composition new \
-                       -binds [list $asset1 $asset2] \
-                       -base ${asset1}::Graph \
-                       -features [list ${asset2}::coloured ${asset1}::weighted]]
-        
-      } \
+      -setup $SETUP2 \
       -body {
-        ${asset1}::Graph condition set [Condition new -bodyExpression {
+        $(asset1)::Graph condition set [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
         
-        set subject [$ccomp new graph -name "wg"]
-        set n1 [$subject new node]
-        set n2 [$subject new node]
-        set e [$subject new edge -a $n1 -b $n2 \
-                   -weight [$subject new weight -value 2] \
-                   -colour [$subject new color -value "violet"]]
+        set (subject) [$(ccomp) new graph -name "wg"]
+        set (n1) [$(subject) new node]
+        set (n2) [$(subject) new node]
+        set (e) [$(subject) new edge -a $(n1) -b $(n2) \
+                   -weight [$(subject) new weight -value 2] \
+                   -colour [$(subject) new color -value "violet"]]
         
-        lappend _ [$ccomp validate $subject]
+        lappend () [$(ccomp)::Graph isValid $(subject)]
 
-        ${asset1}::weighted condition set [Condition new -bodyExpression {
+        $(asset1)::weighted condition set [Condition new -bodyExpression {
           [next] && false
         }]
 
-        lappend _ [$ccomp validate $subject]
+        lappend () [$(ccomp)::Graph isValid $(subject)]
 
-        ${asset2}::coloured condition set [Condition new -bodyExpression {
+        $(asset2)::coloured condition set [Condition new -bodyExpression {
           false || ![next]
         }]
         
-        lappend _ [$ccomp validate $subject]
+        lappend () [$(ccomp)::Graph isValid $(subject)]
         
-      } -cleanup {
-        $asset1 destroy
-        $asset2 destroy
-        $ccomp destroy
-        unset asset1; unset asset2; unset ccomp; unset -nocomplain _
-      } -result "1 0 1"
+      } -cleanup $CLEANUP -result "1 0 1"
 
 
   test ctx-4.1 "AssetElement propagation (LanguageModel -> Classifiers)" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition add [Condition new -bodyExpression {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
 
-        ${lm1}::Graph::Edge condition add [set (c2) [Condition new -bodyExpression {
+        $(lm1)::Graph::Edge condition add [set (c2) [Condition new -bodyExpression {
           [:a get] ne [:b get]
         }]]
 
-        ${lm1}::Graph::Node condition add [set (c3) [Condition new -bodyExpression {
+        $(lm1)::Graph::Node condition add [set (c3) [Condition new -bodyExpression {
           true
         }]]
         
@@ -294,28 +287,28 @@ namespace eval ::djdsl::ctx::test {
         $(subject) nodes add [set (n2) [$(subject) new node]]
         $(subject) edges add [$(subject) new edge -a $(n1) -b $(n2)]
                 
-        lappend () [$lm1 validate $(subject)]
+        lappend () [$(lm1)::Graph isValid $(subject)]
 
-        set (subject2) [Graphs new graph -name "g2"]
+        set (subject2) [$(lm1) new graph -name "g2"]
         $(subject2) nodes add [set (n3) [$(subject2) new node]]
         $(subject2) nodes add [set (n4) [$(subject2) new node]]
         $(subject2) edges add [$(subject2) new edge -a $(n1) -b $(n1)]
 
-        lappend () [$lm1 validate $(subject2)]
-        catch [list $lm1 validate -blame $(subject2)] (->) (opts)
+        lappend () [$(lm1)::Graph isValid $(subject2)]
+        catch [list $(lm1)::Graph validate $(subject2)] (->) (opts)
         lappend () [expr {[lindex [dict get $(opts) -errorcode] end-1] eq $(c2)}]
 
-        ${lm1}::Graph::Node condition add [set (c4) [Condition new -bodyExpression {
+        $(lm1)::Graph::Node condition add [set (c4) [Condition new -bodyExpression {
           false
         }]]
 
-        lappend () [$lm1 validate $(subject)]
-        catch [list $lm1 validate -blame $(subject)] (->) (opts)
+        lappend () [$(lm1)::Graph isValid $(subject)]
+        catch [list $(lm1)::Graph validate $(subject)] (->) (opts)
         lappend () [expr {[lindex [dict get $(opts) -errorcode] end-1] eq $(c4)}]
 
         
-        lappend () [$lm1 validate $(subject2)]
-        catch [list $lm1 validate -blame $(subject2)] (->) (opts)
+        lappend () [$(lm1)::Graph isValid $(subject2)]
+        catch [list $(lm1)::Graph validate $(subject2)] (->) (opts)
         lappend () [expr {[lindex [dict get $(opts) -errorcode] end-1] eq $(c4)}]
         
       } -cleanup $CLEANUP -result "1 0 1 0 1 0 1";
@@ -323,35 +316,35 @@ namespace eval ::djdsl::ctx::test {
     test ctx-4.2 "AssetElement propagation + chaining" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition add [Condition new -bodyExpression {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
 
-        ${lm1}::Graph::Edge condition add [Condition new -bodyExpression {
+        $(lm1)::Graph::Edge condition add [Condition new -bodyExpression {
           [:a get] ne [:b get]
         }]
         
-        set (subject) [$lm1 new graph -name "g"]
+        set (subject) [$(lm1) new graph -name "g"]
         $(subject) nodes add [set (n1) [$(subject) new node]]
         $(subject) nodes add [set (n2) [$(subject) new node]]
         $(subject) edges add [$(subject) new edge -a $(n1) -b $(n2)]
 
-        lappend () [$lm1 validate $(subject)]
+        lappend () [$(lm1)::Graph isValid $(subject)]
 
-        set (subject2) [$comp1 new graph -name "wg"]
+        set (subject2) [$(comp1) new graph -name "wg"]
         $(subject2) nodes add [set (n3) [$(subject) new node]]
         $(subject2) nodes add [set (n4) [$(subject) new node]]
         $(subject2) edges add [set (e1) [$(subject2) new edge -a $(n3) -b $(n4) \
                                              -weight [set (w1) [$(subject2) new weight -value 5]]]]
 
-        lappend () [$comp1 validate $(subject2)]
+        lappend () [$(comp1)::Graph isValid $(subject2)]
         
-        ${lm1}::weighted::Edge condition add [set (c1) [Condition new -bodyExpression {
+        $(lm1)::weighted::Edge condition add [set (c1) [Condition new -bodyExpression {
           [[:weight get] value get] > 5
         }]]
 
-        lappend () [$comp1 validate $(subject2)]
-        catch [list $comp1 validate -blame $(subject2)] (->) (opts)
+        lappend () [$(comp1)::Graph isValid $(subject2)]
+        catch [list $(comp1)::Graph validate $(subject2)] (->) (opts)
         lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
         lappend () [expr {$(actualCond) eq $(c1) && $(actualChecked) eq $(e1)}]
         
@@ -360,26 +353,26 @@ namespace eval ::djdsl::ctx::test {
   test ctx-5.1 "Basic constraints" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition add [Condition new -bodyExpression {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
 
-        ${lm1}::Graph::Edge condition add [Condition new -bodyExpression {
+        $(lm1)::Graph::Edge condition add [Condition new -bodyExpression {
           [:a get] ne [:b get]
         }]
         
-        set (subject) [$lm1 new graph -name "g"]
+        set (subject) [$(lm1) new graph -name "g"]
         $(subject) nodes add [set (n1) [$(subject) new node]]
         $(subject) nodes add [set (n2) [$(subject) new node]]
         $(subject) edges add [$(subject) new edge -a $(n1) -b $(n2)]
 
-        lappend () [$lm1 validate $(subject)]
+        lappend () [$(lm1)::Graph isValid $(subject)]
 
         set (p1) [$(subject) info lookup variables nodes]
         $(subject) eval {set :nodes {1 2}}
 
-        lappend () [$lm1 validate $(subject)]
-        catch [list $lm1 validate -blame $(subject)] (->) (opts)
+        lappend () [$(lm1)::Graph isValid $(subject)]
+        catch [list $(lm1)::Graph validate $(subject)] (->) (opts)
         lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
         lappend () [expr {$(actualCond) eq $(p1) &&
                           $(actualChecked) eq $(subject)}]
@@ -389,26 +382,26 @@ namespace eval ::djdsl::ctx::test {
     test ctx-5.2 "Basic constraints (multi-valued)" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition add [Condition new -bodyExpression {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
 
-        ${lm1}::Graph::Edge condition add [Condition new -bodyExpression {
+        $(lm1)::Graph::Edge condition add [Condition new -bodyExpression {
           [:a get] ne [:b get]
         }]
         
-        set (subject) [$lm1 new graph -name "g"]
+        set (subject) [$(lm1) new graph -name "g"]
         $(subject) nodes add [set (n1) [$(subject) new node]]
         $(subject) nodes add [set (n2) [$(subject) new node]]
         $(subject) edges add [$(subject) new edge -a $(n1) -b $(n2)]
 
-        lappend () [$lm1 validate $(subject)]
+        lappend () [$(lm1)::Graph isValid $(subject)]
 
         set (p1) [$(subject) info lookup variables nodes]
         $(subject) eval {set :nodes "\{${:nodes}"}
 
-        lappend () [$lm1 validate $(subject)]
-        catch [list $lm1 validate -blame $(subject)] (->) (opts)
+        lappend () [$(lm1)::Graph isValid $(subject)]
+        catch [list $(lm1)::Graph validate $(subject)] (->) (opts)
         lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
         lappend () [expr {$(actualCond) eq $(p1) &&
                           $(actualChecked) eq $(subject)}]
@@ -418,35 +411,85 @@ namespace eval ::djdsl::ctx::test {
   test ctx-5.3 "Basic constraints (defaults)" \
       -setup $SETUP \
       -body {
-        ${lm1}::Graph condition add [Condition new -bodyExpression {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
           [llength [:edges get]]*2 == [llength [:nodes get]]
         }]
         
-        ${lm1}::Graph::Edge condition add [Condition new -bodyExpression {
+        $(lm1)::Graph::Edge condition add [Condition new -bodyExpression {
           [:a get] ne [:b get]
         }]
         
-        set (subject) [$lm1 new graph -name "g"]
+        set (subject) [$(lm1) new graph -name "g"]
         $(subject) nodes add [set (n1) [$(subject) new node]]
         $(subject) nodes add [set (n2) [$(subject) new node]]
         $(subject) edges add [$(subject) new edge -a $(n1) -b $(n2)]
 
-        lappend () [$lm1 validate $(subject)]
+        lappend () [$(lm1)::Graph isValid $(subject)]
 
         set (p1) [$(subject) info lookup variables nodes]
         $(subject) eval {unset :nodes}
 
-        lappend () [$lm1 validate $(subject)]
-        catch [list $lm1 validate -blame $(subject)] (->) (opts)
+        lappend () [$(lm1)::Graph isValid $(subject)]
+        catch [list $(lm1)::Graph validate $(subject)] (->) (opts)
         lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
         lappend () [expr {$(actualCond) eq $(p1) &&
                           $(actualChecked) eq $(subject)}]
         
       } -cleanup $CLEANUP -result "1 0 1";
+  
+  test ctx-6.1 "stepwise validation (incl. introduction-only)" \
+      -setup $SETUP2 \
+      -body {
+
+        $(asset1)::Graph condition add [Condition new -bodyExpression {
+          [llength [:edges get]]*2 == [llength [:nodes get]]
+        }]
+        
+        $(ccomp)::Graph condition add [set (c0) [Condition new -bodyExpression {
+          ![next]
+        }]]
+        
+        set (subject) [$(ccomp) new graph -name "g"]
+        $(subject) nodes add [set (n1) [$(subject) new node]]
+        $(subject) nodes add [set (n2) [$(subject) new node]]
+        $(subject) edges add [set (e1) [$(subject) new edge -a $(n1) -b $(n2) \
+                                            -weight [$(subject) new weight -value 1] \
+                                            -colour [$(subject) new color -value "red"]]]
+
+        lappend () [$(asset1)::Graph isValid $(subject)]; # introduction-only
+        lappend () [$(ccomp)::Graph isValid $(subject)]; # entire chain of context conditions (incl. composition-specific ones)
+        catch [list $(ccomp)::Graph validate $(subject)] (->) (opts)
+        lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
+        lappend () [expr {$(actualCond) eq $(c0) &&
+                          $(actualChecked) eq $(subject)}]
+
+        $(asset1)::Graph::Edge condition add [set (c1) [Condition new -bodyExpression {
+          [:a get] eq [:b get]
+        }]]
+
+        $(ccomp)::Graph condition delete $(c0)
+        
+        lappend () [$(asset1)::Graph isValid $(subject)]; # introduction-only, plus roles
+        catch [list $(asset1)::Graph validate $(subject)] (->) (opts)
+        lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
+        lappend () [expr {$(actualCond) eq $(c1) &&
+                          $(actualChecked) eq $(e1)}]
+
+        $(ccomp)::Graph::Edge condition add [Condition new -bodyExpression {
+          ![next]
+        }]
+
+        lappend () [$(ccomp)::Graph isValid $(subject)]; # entire chain of context conditions (incl. composition-specific ones), plus roles
+
+        # $(asset1)::weighted isValid $(subject); # weighted + introduction
+        # $(asset2)::coloured isValid $(subject); # coloured + weighted + introduction
+
+        
+      } -cleanup $CLEANUP -result "1 0 1 0 1 1";
 
 
-
-  puts stderr >>>[info vars]
+  
+  # puts stderr >>>[info vars]
   # TODOS:
   # 1) test case propagation plus [next] combination
   # 2) test case: intrinsic conditions (property specs)

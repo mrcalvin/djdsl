@@ -187,12 +187,28 @@ apply {{version code {test ""}} {
       return $f
     }
     
-    AssetElement public method validate {-or:switch e:object validators} {
+    AssetElement public method validate {-or:switch e:object validators:optional} {
+
+      if {![info exists validators]} {
+        set ancestors [$e info precedence]
+        if {[self] ni $ancestors} {
+          throw [list DJDSL CTX FAILED ANCESTRY [self] $e] \
+              "Not allowed: '[self]' is not in the refinement chain '$ancestors'"
+        }
+        # Skip forward to [self] as first validator
+        # ::djdsl::ctx::test::Graphs::Graph', got an instance of '::nsf::__#0T::Graph
+        # puts start=[self],[lsearch -exact $ancestors [self]]
+        set validators [lrange $ancestors [lsearch -exact $ancestors [self]] end]
+        set validators [lassign $validators assetElement]
+        # puts assetElement=$assetElement,next=$validators
+      }
+      
       set explicitNexts 0
       set validators [lassign $validators next]
       if {$next ne "" && ![$next info has type [current class]]} {
         set next ""
       }
+      
       set f [:compileScript]
       if {$f ne ""} {
         try {
@@ -208,6 +224,7 @@ apply {{version code {test ""}} {
           }
         } trap {} {errMsg opts} {
           # wrap any other error report
+          puts opts=$opts
           throw {DJDSL CTX FAILED EXPR} $errMsg
         } finally {
           set explicitNexts [::djdsl::ctx::context clear]
@@ -222,41 +239,42 @@ apply {{version code {test ""}} {
       return
     }
 
-    LanguageModel public method validate {-or:switch e:object validators} {
+    AssetElement public method isValid {-or:switch e:object} {
+      try {
+        :validate -or=$or $e
+        return 1
+      } trap {DJDSL CTX VIOLATED} {e opts} {
+        return 0
+      } on error {e opts} {
+        return -options $opts $e
+      }
+    }
+
+    Collaboration public method validate {-or:switch e:object args} {
+      set self [self]
       next
-      foreach el [$e info children] {
-        # TODO: -type filter for "info precedence"?
-        set validators [lmap a [$el info precedence] {
-          if {[$a info has type ::djdsl::lm::AssetElement]} {
-            set a
-          } else {
-            continue
-          }}]
-        if {![llength $validators]} continue;
-        set nextValidators [lassign $validators assetElement]
-        $assetElement validate -or=$or $el $nextValidators
+      if {![llength $args]} {
+        foreach el [$e info children] {
+          # TODO: -type filter for "info precedence"?
+          set cl ${self}::[[$el info class] info name]
+          # puts cl($self)=$cl,[$el info class]
+          if {[::nsf::is object $cl] && [$cl info has type ::djdsl::lm::AssetElement]} {
+            $cl validate -or=$or $el
+          }
+        }
       }
     }
     
-    Asset public method validate {-blame:switch -or:switch e:object} {
-      # TODO: -type filter for "info precedence"?
-      set nextValidators [lassign [$e info precedence] assetElement]
-      if {[$assetElement info has type AssetElement]} {
-        try {
-          $assetElement validate -or=$or $e $nextValidators
-          return 1
-        } trap {DJDSL CTX VIOLATED} {e opts} {
-          if {$blame} {
-            return -options $opts $e
-          } else {
-            return 0
-          }
-        }
-      } else {
-        throw {DJDSL CTX UNSUPPORTED $e} \
-            "Validation is not supported for '$assetElement' instance."
-      }
-    }
+    # Asset public method validate {-or:switch e:object} {
+    #   # TODO: -type filter for "info precedence"?
+    #   set nextValidators [lassign [$e info precedence] assetElement]
+    #   if {[$assetElement info has type AssetElement]} {
+    #     $assetElement validate -or=$or $e $nextValidators
+    #   } else {
+    #     throw {DJDSL CTX UNSUPPORTED $e} \
+    #         "Validation is not supported for '$assetElement' instance."
+    #   }
+    # }
     
     namespace export Condition
   } {
