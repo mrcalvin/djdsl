@@ -141,6 +141,25 @@ namespace eval ::djdsl::ctx::test {
         
       } -cleanup $CLEANUP -result 1
 
+    test ctx-1.4 "Entering into wrong refinement (validation) chain" \
+      -setup $SETUP \
+      -body {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
+          [llength [:edges get]]*2 == [llength [:nodes get]]
+        }]
+        
+        set (subject) [$(lm1) new graph -name "g"]
+        set (n1) [$(subject) new node]
+        set (n2) [$(subject) new node]
+        $(subject) nodes add $(n1)
+        $(subject) nodes add $(n2)
+        $(subject) edges add [$(subject) new edge -a $(n1) -b $(n2)]
+        
+        catch {$(lm1)::Graph::Edge isValid $(subject)} (->) (opts)
+        dict get $(opts) -errorcode
+        
+      } -cleanup $CLEANUP -match glob -result "DJDSL CTX FAILED ANCESTRY *"
+
   test ctx-2.1 "Basic chaining (allOf, and)" \
       -setup $SETUP \
       -body {
