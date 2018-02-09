@@ -500,13 +500,32 @@ namespace eval ::djdsl::ctx::test {
 
         lappend () [$(ccomp)::Graph isValid $(subject)]; # entire chain of context conditions (incl. composition-specific ones), plus roles
 
-        # $(asset1)::weighted isValid $(subject); # weighted + introduction
-        # $(asset2)::coloured isValid $(subject); # coloured + weighted + introduction
+        lappend () [$(asset1)::weighted isValid $(subject)]; # weighted + introduction (fails)
+        catch {$(asset1)::weighted validate $(subject)} (->) (opts)
+        lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
+        lappend () [expr {$(actualCond) eq $(c1) &&
+                          $(actualChecked) eq $(e1)}]
 
+        $(asset1)::weighted::Edge condition add [set (c2) [Condition new -bodyExpression {
+          ![next]
+        }]]
+
+        lappend () [$(asset1)::weighted isValid $(subject)]; # weighted + introduction (succeeds)
+
+        lappend () [$(asset2)::coloured isValid $(subject)]; # coloured + weighted + introduction (succeeds)
+
+        $(asset2)::coloured::Edge condition add [set (c2) [Condition new -bodyExpression {
+         ![next]
+        }]]
+
+        lappend () [$(asset2)::coloured isValid $(subject)]; # coloured + weighted + introduction (fails, again!)
+
+        catch {$(asset2)::coloured validate $(subject)} (->) (opts)
+        lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
+        lappend () [expr {$(actualCond) eq $(c2) &&
+                          $(actualChecked) eq $(e1)}]
         
-      } -cleanup $CLEANUP -result "1 0 1 0 1 1";
-
-
+      } -cleanup $CLEANUP -result "1 0 1 0 1 1 0 1 1 1 0 1";
   
   # puts stderr >>>[info vars]
   # TODOS:

@@ -251,14 +251,16 @@ apply {{version code {test ""}} {
     }
 
     Collaboration public method validate {-or:switch e:object args} {
-      set self [self]
+      # set self [self]
       next
+      # Only propagate into children at the beginning of a chain of
+      # collaborations.
       if {![llength $args]} {
         foreach el [$e info children] {
           # TODO: -type filter for "info precedence"?
-          set cl ${self}::[[$el info class] info name]
+          set cl [self]::[[$el info class] info name]
           # puts cl($self)=$cl,[$el info class]
-          if {[::nsf::is object $cl] && [$cl info has type ::djdsl::lm::AssetElement]} {
+          if {[::nsf::is class $cl] && [$cl info has type AssetElement]} {
             $cl validate -or=$or $el
           }
         }
