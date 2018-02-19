@@ -1,5 +1,7 @@
 package req nx::test
 
+# package req profiler
+# profiler::init
 package req nx
 package require pt::rde::nx
 
@@ -81,7 +83,6 @@ namespace eval ::opeg {
 
   package require pt::pgen
   try [pt::pgen peg $g nx -class Parser -name "OPEG Grammar"] on return {} {;}
-
   #
   # opeg::Rewriter
   #
@@ -151,7 +152,7 @@ namespace eval ::opeg {
       # 2) Downshape OPEG "AST" into serial PEG "AST"
       set ser [:rewrite $opegAst $opegScript]
       # 3) Generate PEG+ parser bundle
-      puts ser=$ser
+      # puts ser=$ser
       ## initialize to NX/PEG backend defaults or dummies
       pt::tclparam::configuration::nx def _ _ _  {pt::peg::to::tclparam configure}
       
@@ -628,6 +629,11 @@ nx::Class create CalculatorFactory -superclasses ModelFactory {
 # parser+builder for this OPEG.
 #
 
+
+# debug on pt/rdengine
+
+# ::nsf::configure dtrace on
+
 set builderGen [BuilderGenerator new]
 puts stderr [string index $g 52]
 set builderClass [$builderGen bgen $g [CalculatorFactory new]]
@@ -640,14 +646,20 @@ set builder [$builderClass new]
 #
 
 # $builder print {1+2}
-set rObj [$builder parse {1+2}]
+puts [time {set rObj [$builder parse {1+2}]} 1000]
+# puts stderr [profiler::print]
+# ::nsf::configure dtrace off
 
+# $builder destroy
+# debug off pt/rdengine
+# exit
 ? {$rObj info class} ::Binary
 ? {[$rObj lhs get] info class} ::Const
 ? {[$rObj lhs get] cget -value} 1
 ? {[$rObj rhs get] info class} ::Const
 ? {[$rObj rhs get] cget -value} 2
 ? {$rObj cget -op} "+"
+
 
 set rObj [$builder parse {5}]
 ? {$rObj info class} ::Const
@@ -896,7 +908,8 @@ Adj        <- 'adj' ' '+ DAPOSTROPH adj:Str DAPOSTROPH;
 # paths:
 #      Adj        <- 'adj' ' '+ DAPOSTROPH adj:(`$root {lines $current} points` Str) DAPOSTROPH;
       Str        <- !DAPOSTROPH <alnum>*;
-      Point2D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
+Point2D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
+Point3D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
 void:      DAPOSTROPH    <- '\"' ;
 END;}
 
@@ -1049,7 +1062,7 @@ END;}
 set builderClass [$builderGen bgen $geom2]
 set diagramBuilder [$builderClass new]
 
-# puts stderr [time {set c2 [$diagramBuilder parse $aDraw]} 1000]; # ~7ms unoptimized
+puts stderr [time {set c2 [$diagramBuilder parse $aDraw]} 1000]; # ~7ms unoptimized
 
 set c2 [$diagramBuilder parse $aDraw]
 
@@ -1510,7 +1523,6 @@ pt::rde::nx public method -> {args} {
 
 exit
 
-
 ## letter (letter / digit letter / digit )*
 set identifier [$letter , {{{{$letter : p1} / {$digit $letter} / $digit} *}}]
 set identifier [$letter , [[$letter / [$digit , $letter] / $digit] *] , $letter]
@@ -1523,6 +1535,31 @@ set identifier [$letter then $letter choice ]
 # package req nx::serializer; this stumbles over the TclOO alien :(
 # puts identifier=[$identifier serialize]
 
+
+	    # ## clone all methods
+	    # foreach m [info class methods ${:prototype} -private] {
+	    #     lassign [info class definition ${:prototype} $m] params body
+		
+	    #     if {1} {
+	    #         :method $m $params [string map [list @body@ $body @vars@ $vars] {
+	    #     	@vars@
+	    #     	@body@
+	    #         }]
+	    #     } else {
+		
+	    #     set methodBody [string map [list @body@ $body @vars@ $vars @params@ $params] {
+	    #         try {
+	    #     	apply [list {@params@} {
+	    #     	    @vars@
+	    #     	    @body@
+	    #     	} [self]] {*}${args}
+	    #         } on return {} {
+	    #     	return -code return
+	    #         }
+	    #     }]
+	    #     :method $m {args} $methodBody
+	    # }
+	    # }
 
 # Local variables:
 #    mode: tcl

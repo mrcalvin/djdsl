@@ -177,7 +177,7 @@ namespace eval ::djdsl::ctx::test {
         set (e) [$(subject) new edge -a $(n1) -b $(n2) \
                      -weight [$(subject) new weight -value 2]]        
         
-        $(comp1)::Graph isValid $(subject)
+        $(comp1)::Graph isValid2 -and $(subject)
         
       } -cleanup $CLEANUP -result 0
 
@@ -224,8 +224,38 @@ namespace eval ::djdsl::ctx::test {
         
       } -cleanup $CLEANUP -result 0
 
+    test ctx-2.4 "Basic chaining (allOf, and), skip forward" \
+      -setup $SETUP \
+      -body {
+        $(lm1)::Graph condition add [Condition new -bodyExpression {
+          [llength [:edges get]]*2 == [llength [:nodes get]]
+        }]
 
-  
+        $(lm1)::weighted condition add [set (c0) [Condition new -bodyExpression {
+          false
+        }]]
+
+        $(comp1)::Graph condition add [set (c1) [Condition new -bodyExpression {
+          true
+        }]]
+
+        set (subject) [$(comp1) new graph -name "wg"]
+        set (n1) [$(subject) new node]
+        set (n2) [$(subject) new node]
+        set (e) [$(subject) new edge -a $(n1) -b $(n2) \
+                     -weight [$(subject) new weight -value 2]]        
+        
+        lappend () [$(comp1)::Graph isValid2 -and $(subject)]
+        lappend () [$(comp1)::Graph isValid2 $(subject)]
+
+        $(lm1)::weighted condition delete $(c0)
+
+        lappend () [$(comp1)::Graph isValid2 -and $(subject)]
+        lappend () [$(comp1)::Graph isValid2 $(subject)]
+        
+      } -cleanup $CLEANUP -result "0 1 1 1"
+
+ 
     test ctx-3.1 "Basic combination" \
       -setup $SETUP \
       -body {
@@ -526,15 +556,164 @@ namespace eval ::djdsl::ctx::test {
                           $(actualChecked) eq $(e1)}]
         
       } -cleanup $CLEANUP -result "1 0 1 0 1 1 0 1 1 1 0 1";
+
+  # 5) test case: frontend syntax for entering conditions
+  
+  test ctx-7.1 "frontend (adding one condition)" \
+      -setup $SETUP2 \
+      -body {
+        context Graphs::Graph {
+          cond {[:edges isSet] && [:edges forall e {
+            [$e a get] in [:nodes get] &&
+            [$e b get] in [:nodes get]}]}
+        }
+
+        llength [Graphs::Graph condition get]
+      } -cleanup $CLEANUP -result "1";
+
+  test ctx-7.2 "frontend (2+ conditions)" \
+      -setup $SETUP2 \
+      -body {
+        context Graphs::Graph {
+          cond {[:edges isSet] && [:edges forall e {
+            [$e a get] in [:nodes get] &&
+            [$e b get] in [:nodes get]}]}
+          cond {true}
+          cond {false}
+        }
+
+        llength [Graphs::Graph condition get]
+      } -cleanup $CLEANUP -result "3";
+
+  test ctx-7.3 "frontend (none)" \
+      -setup $SETUP2 \
+      -body {
+        context Graphs::Graph {;}
+        Graphs::Graph condition isSet
+      } -cleanup $CLEANUP -result "0";
+
+
+  # 6) test case: model methods (nested class per AssetElement,
+  # *::weighted::helpers, mixed into upon validation, protected by
+  # default; "model method" modifier for AssetElement)
+
+  test ctx-8.1 "model methods (definition + call)" \
+      -setup $SETUP2 \
+      -body {
+        Graphs::Graph \
+            model method hasIsolates {} { return 0 }
+
+        Graphs::Graph condition add [set (c0) [Condition new -bodyExpression {
+          [:hasIsolates]
+        }]]
+
+        set (subject) [$(ccomp) new graph -name "g"]
+        $(subject) nodes add [set (n1) [$(subject) new node]]
+        $(subject) nodes add [set (n2) [$(subject) new node]]
+        $(subject) edges add [set (e1) [$(subject) new edge -a $(n1) -b $(n2) \
+                                            -weight [$(subject) new weight -value 1] \
+                                            -colour [$(subject) new color -value "red"]]]
+
+        
+        lappend () [Graphs::Graph isValid $(subject)]
+        catch [list Graphs::Graph validate $(subject)] (->) (opts)
+        lassign [lreverse [dict get $(opts) -errorcode]] (actualChecked) (actualCond)
+        lappend () [expr {$(actualCond) eq $(c0) &&
+                          $(actualChecked) eq $(subject)}]
+
+        Graphs::Graph condition delete $(c0)
+        Graphs::Graph condition add [set (c1) [Condition new -bodyExpression {
+          ![:hasIsolates]
+        }]]
+
+        lappend () [Graphs::Graph isValid $(subject)]
+
+      } -cleanup $CLEANUP -result "0 1 1";
+
+   test ctx-8.2 "model methods (API definition + call)" \
+      -setup $SETUP2 \
+      -body {
+        
+        set (subject) [$(ccomp) new graph -name "g"]
+        $(subject) nodes add [set (n1) [$(subject) new node]]
+        $(subject) nodes add [set (n2) [$(subject) new node]]
+        $(subject) edges add [set (e1) [$(subject) new edge -a $(n1) -b $(n2) \
+                                            -weight [$(subject) new weight -value 1] \
+                                            -colour [$(subject) new color -value "red"]]]
+
+        
+        lappend () [Graphs::Graph isValid $(subject)]
+
+        context Graphs::Graph {
+          cond {[:hasIsolates2]}
+          op hasIsolates2 {} { return 0 }
+        }
+
+        lappend () [Graphs::Graph isValid $(subject)]
+
+
+      } -cleanup $CLEANUP -result "1 0";
+
+  # 7) test case: copying object graph (IuV) for validation (to mimick
+  # side-effect freeness)
+  
+  test ctx-9.1 "Pure mode" \
+      -setup $SETUP2 \
+      -body {
+        
+        set (subject) [$(ccomp) new graph -name "g"]
+        $(subject) nodes add [set (n1) [$(subject) new node]]
+        $(subject) nodes add [set (n2) [$(subject) new node]]
+        $(subject) edges add [set (e1) [$(subject) new edge -a $(n1) -b $(n2) \
+                                            -weight [$(subject) new weight -value 1] \
+                                            -colour [$(subject) new color -value "red"]]]
+        
+        # Graphs::Graph validate2 outplace $(subject)
+        
+        set (r) [Graphs::Graph isValid2 -and -outplace $(subject)]
+        lappend () [expr {$(r) && $(r) ==
+                          [Graphs::Graph isValid $(subject)]}]
+        
+        context Graphs::Graph {
+          cond {[:hasIsolates2]}
+          op hasIsolates2 {} { return 0 }
+        }
+        
+        set (r) [Graphs::Graph isValid2 -and -outplace $(subject)]
+        lappend () [expr { !$(r) && $(r) ==
+                           [Graphs::Graph isValid $(subject)]}]
+        
+        context $(ccomp)::Graph {
+          op hasIsolates2 {} { return 1 }
+        }
+        
+        set (r) [$(ccomp)::Graph isValid2 -and -outplace $(subject)]
+        lappend () [expr { $(r) && $(r) ==
+                           [$(ccomp)::Graph isValid $(subject)]}]
+
+        context $(ccomp)::Graph {
+          op hasIsolates2 {} { next }
+        }
+        
+        set (r) [$(ccomp)::Graph isValid2 -and -outplace $(subject)]
+        lappend () [expr { !$(r) && $(r) ==
+                           [$(ccomp)::Graph isValid $(subject)]}]
+
+        lappend () [expr {[$(subject) info lookup methods hasIsolates] eq ""}]
+        lappend () [expr {[$(subject) info lookup methods hasIsolates2] eq ""}]
+        
+      } -cleanup $CLEANUP -result "1 1 1 1 1 1";
   
   # puts stderr >>>[info vars]
   # TODOS:
-  # 1) test case propagation plus [next] combination
-  # 2) test case: intrinsic conditions (property specs)
-  # 3) test case: $comp1 validate $(subject)
+  # 1) test case propagation plus [next] combination [OK]
+  # 2) test case: intrinsic conditions (property specs) [OK]
+  # 3) test case: $comp1 validate $(subject) [OK]
+  
   # 4) test case: basic quantifiers (forAll, collect, allInstances) for *::context namespace
-  # 5) test case: frontend syntax for entering conditions
-
+  # 8) test case: model properties (let).
+  # 9) test case: marker mode (evaluate all conditions, collect all violations, severity filter)
+  # 10) test case: formatable violation message (cond "failed because of %name" {})
 }
 
 #
