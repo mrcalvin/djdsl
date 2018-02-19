@@ -1,0 +1,102 @@
+package require tcltest
+::tcltest::configure {*}$argv
+
+package require djdsl::lm
+
+
+namespace eval ::djdsl::lm::test {
+  namespace import ::tcltest::*
+  namespace import ::djdsl::lm::*
+  
+  variable SETUP {
+    set (lm1) [Asset create Graphs {
+      LanguageModel create Graph {
+        :property name
+        :property -incremental {
+          edges:0..*,type=Graph::Edge,substdefault {[list]}
+        }
+        :property -incremental {
+          nodes:0..*,type=Graph::Node,substdefault {[list]}
+        }
+        
+        Classifier create Node
+        Classifier create Edge {
+        :property -accessor public a:object,type=Node,required
+        :property -accessor public b:object,type=Node,required
+      }
+    }
+
+    Collaboration create weighted {
+      Classifier create Weight {
+        :property -accessor public {value 0}
+      }
+      Role create A
+      Role create Edge -superclasses A {
+        :property -accessor public weight:object,type=Weight
+      }
+    }
+  }]
+
+    set (comp1) [Composition create WeightedGraphs \
+                   -binds Graphs \
+                   -base $(lm1)::Graph \
+                   -features $(lm1)::weighted]
+  }
+  
+  variable CLEANUP {
+    if {[array exists {}]} {
+      foreach k [array names {}] {
+        set v [set ($k)]
+        # puts ($k)=$v
+        foreach i $v {
+          if {[::nsf::is object $i]} {
+            # puts "          $i destroy"
+            $i destroy
+          }
+        }
+      }
+      array unset {}
+      unset -nocomplain k
+      unset -nocomplain v
+    }
+  }
+  
+  test ctx-1.1 "Nesting (assets)" -setup $SETUP -body {
+    set (children) [$(lm1) info children -type ::djdsl::lm::AssetElement]
+    lappend () [llength $(children)]
+    lappend () [lsort [lmap c $(children) {
+                                     $c info name
+                                   }]]
+  } -cleanup $CLEANUP -result "2 {Graph weighted}"
+
+  test ctx-1.2 "Nesting (collaborations)" -setup $SETUP -body {
+    set (children1) [$(lm1)::Graph info children \
+                         -type AssetElement]
+    lappend () [llength $(children1)]
+    lappend () [lsort [lmap c $(children1) {
+                                     $c info name
+                                   }]]
+
+    set (children2) [$(lm1)::weighted info children \
+                        -type AssetElement]
+    lappend () [llength $(children2)]
+    lappend () [lsort [lmap c $(children2) {$c info name}]]
+
+  } -cleanup $CLEANUP -result "2 {Edge Node} 3 {A Edge Weight}"
+
+  test ctx-1.3 "Nesting (class relationships are localised)" -setup $SETUP -body {
+    $(lm1)::weighted::Edge info superclasses
+  } -cleanup $CLEANUP -result "[namespace current]::Graphs::weighted::A"
+
+  # TODO: test case on precedences ("FROs")
+  # TODO: test case on abstractedness of Collaborations and Roles
+  # TODO: test case on composition pre-conditions (Classifier for a Role etc.)
+}
+
+#
+# Local variables:
+#    mode: tcl
+#    tcl-indent-level: 2
+#    indent-tabs-mode: nil
+# End:
+#
