@@ -1,12 +1,15 @@
 TCLSH=tclsh
 NSFSRC=/Users/ssoberni/Documents/dev/nsf
 
-tutorial.src : tutorial.tcl
-# echo "::proc apply args { puts [string trim [regsub -line -all {^[ \t][ \t]} [lindex \$$args 2] {}]]; puts [string trim [regsub -line -all {^[ \t][ \t]} [lindex \$$args 3] {}]]; }; source $<" | $(TCLSH) > $@
+
+%.html : %.adoc
+	asciidoctor $<
+
+%.src : %.tcl
 	$(TCLSH) $< --print > $@
-tutorial.adoc : tutorial.src
+%.adoc : %.src
 	$(TCLSH) $(NSFSRC)/apps/utils/source-doc-beautifier.tcl -notitle $<
-	mv tutorial.txt $@
+	mv $(basename $<).txt $@
 
 %.tm : %.tcl loadscript.tcl
 	$(TCLSH) $< \
