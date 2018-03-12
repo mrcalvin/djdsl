@@ -1,0 +1,869 @@
+package require tcltest
+::tcltest::configure {*}$argv
+
+package require djdsl::opeg
+
+
+namespace eval ::djdsl::opeg::test {
+  namespace import ::tcltest::*
+  namespace import ::djdsl::opeg::*
+  # namespace import ::djdsl::lm::*
+  
+  variable SETUP {
+    set (builderGen) [BuilderGenerator new]
+  }
+
+  
+  variable CLEANUP {
+    if {[array exists {}]} {
+      foreach k [array names {}] {
+        set v [set ($k)]
+        foreach i $v {
+          if {[::nsf::is object $i]} {
+            $i destroy
+          }
+        }
+      }
+      array unset {}
+      unset -nocomplain k
+      unset -nocomplain v
+    }
+  }
+  
+  test opeg-0.1 "union with override" -setup $SETUP -body {
+    set (builder) [[set (eLangBuilder) [$(builderGen) bgen rules -name ELang -start STAT {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+      INT  <- <digit>+;
+      ID   <- <alpha>+;
+void: WS   <- <space>+;
+    }]] new]
+
+    lappend () [$(builder) info has type ::pt::rde::nx]
+
+  } -cleanup $CLEANUP -result "1"
+  
+}
+
+return
+if {0} {
+
+      set myELangBuilder [$(builderGen) bgen rules \
+                            -name MyELang \
+                            -start STAT \
+                            -includes $(eLangBuilder) -transforms {
+                              STAT <= ELang::STAT
+                              STAT <=>
+                              STAT +=
+                              STAT =+>
+                            } {
+                              EXPR <- INT;
+                              INT  <- <digit>+;
+                              ID   <- <alpha>+;
+                        void: WS   <- <space>+;
+                            }]
+
+    set (builder2) [${myELangBuilder} new]
+    lappend () [$(builder2) info has type ::pt::rde::nx]
+
+  
+  ## NEXT STEPS
+
+  ## 1) -> Check alternative syntaxes for ObjSpecs (not @, EBNF ideas, curly braces?)
+  ## EBNF: special sequence (? ?)
+  ## EBNF: () next to identifier?
+  ## REGEX: named back-references notation (?=<name> ...)
+  ## annotation-like: --> @IDENTIFIER
+  ## FOR NOW: grave accent `...`
+  
+  ## 
+  ## 2) -> Revise field notation to support built-in (PT, string is) ranges as well as non-terminal values for fields.
+  ## DONE
+
+
+## 3) -> Support for collections
+
+set g3 {
+OPEG Coordinate (P)
+       P  <- `HyperPoint` '(' (x:<digit>)+ ',' (x:<digit> y:<digit>)? ')';
+END;}
+
+# puts stderr [string index $g3 41]
+# $builderGen print $g3
+set builderClass [$builderGen bgen $g3]
+set coordBuilder [$builderClass new]
+
+
+nx::Class create HyperPoint {
+  :property x:integer,1..*
+  :property y:integer
+}
+
+# $coordBuilder print {(92,32)}; #$coordBuilder print {(987,2)}
+set p [$coordBuilder parse {(92,32)}]; #set p [$coordBuilder parse {(987,2)}]
+? {$p info class} ::HyperPoint
+? {$p cget -x} "9 2 3";
+? {$p cget -y} "2";
+
+# C ::= [Call] fun:id "(" args:Exp* @"," ")"
+
+nx::Class create Call {
+  :property fun
+  :property args
+}
+
+set g4 {
+OPEG CallDecl (C)
+      C    <- `Call` fun:ID '(' (args:Exp)? (',' args:Exp)* ')';
+      ID   <- 'foo';
+      Exp  <- <digit>;
+END;}
+
+# $builderGen print $g4
+set builderClass [$builderGen bgen $g4]
+set callBuilder [$builderClass new]
+
+set c [$callBuilder parse {foo(1,1,2,2)}];
+? {$c info class} ::Call
+? {$c cget -fun} "foo";
+? {$c cget -args} "1 1 2 2";
+
+set c [$callBuilder parse {foo()}];
+? {$c info class} ::Call
+? {$c cget -fun} "foo";
+? {$c cget -args} {can't read "args": no such variable};
+
+# TODO:
+# ARGS <- (args:Exp)? (',' args:Exp)* a top-level list -> flatten!
+
+set g5 {
+OPEG CallDecl (C)
+      C    <- `Call` fun:ID '(' ARGS ')';
+      ARGS <- (args:Exp)? (',' args:Exp)*;
+      ID   <- 'foo';
+      Exp  <- <digit>;
+END;}
+
+# $builderGen print $g5
+set builderClass [$builderGen bgen $g5]
+set callBuilder [$builderClass new]
+
+set c [$callBuilder parse {foo(1,1,2,2)}];
+? {$c info class} ::Call
+? {$c cget -fun} "foo";
+? {$c cget -args} "1 1 2 2";
+
+# ARGS <- args:Exp (','ARGS)* adds cascaded of lists
+
+set g6 {
+OPEG CallDecl (C)
+      C    <- `Call` fun:ID '(' ARGS ')';
+      ARGS <- (args:Exp)? (',' ARGS)*;
+      ID   <- 'foo';
+      Exp  <- <digit>;
+END;}
+
+# $builderGen print $g6
+set builderClass [$builderGen bgen $g6]
+set callBuilder [$builderClass new]
+
+set c [$callBuilder parse {foo(2,1,2,5)}];
+? {$c info class} ::Call
+? {$c cget -fun} "foo";
+? {$c cget -args} "2 1 2 5";
+
+## 4) -> Enso examples
+
+# start Drawing
+# Drawing ::= [Drawing] "drawing" /> lines:Line* @/ /
+# Line ::= [Line] "line" label:str /> points:Point2D* @/ < Adj? 
+# Adj ::= / "adj" adj:<root.lines[it]>
+# Point3D ::= [Point3D] "point" x:int y:int z:int
+# Point2D ::= [Point2D] "point" x:int y:int
+
+nx::Class create Drawing {
+  :property lines:0..n,object,type=::Line
+}
+
+nx::Class create Line {
+  :property label
+  :property points:0..n,object,type=::Point2D
+  # :property adj:object,type=::Line
+  :property adj
+}
+
+nx::Class create Point2D {
+  :property x:integer
+  :property y:integer
+}
+
+set geom {
+OPEG Drawing (Drawing)
+      Drawing    <- `Drawing` 'drawing' (<space>+ lines:Line)+;
+      Line       <- `Line` 'line' ' '+ DAPOSTROPH label:Str DAPOSTROPH (' '+ points:Point2D)* ' '+ Adj?;
+Adj        <- 'adj' ' '+ DAPOSTROPH adj:Str DAPOSTROPH;
+# paths:
+#      Adj        <- 'adj' ' '+ DAPOSTROPH adj:(`$root {lines $current} points` Str) DAPOSTROPH;
+      Str        <- !DAPOSTROPH <alnum>*;
+Point2D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
+Point3D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
+void:      DAPOSTROPH    <- '\"' ;
+END;}
+
+set aDraw {drawing
+  line "Flamingo" point 1 1 point 2 2 point 20 20 point 21 21 point 3 3 point 4 4 point 22 22 point 23 23 adj "Stork"
+  line "Stork" point 1 1 point 10 10 adj "Flamingo"}
+
+set builderGen [BuilderGenerator new]
+set builderClass [$builderGen bgen $geom]
+set diagramBuilder [$builderClass new]
+
+set c [$diagramBuilder parse $aDraw]
+? {$c info class} ::Drawing
+set lines [$c cget -lines]
+? {llength $lines} 2
+lassign $lines l1 l2
+? {$l1 info class} ::Line
+? {$l1 cget -label} "Flamingo"
+? {$l1 cget -adj} "Stork"
+? {llength [$l1 cget -points]} 8
+? {$l2 info class} ::Line
+? {$l2 cget -label} "Stork"
+? {$l2 cget -adj} "Flamingo"
+? {llength [$l2 cget -points]} 2
+
+## TODOS (DONE):
+## - fix value passing for quoted, braced values ... too many nesting levels
+
+nx::Class create C {
+  :property p1
+}
+
+set bGram {OPEG MyPEG (D)
+          D <- `C` p1:E;
+  leaf:   E <- '\"' <alnum>+ '\"';
+END;
+}
+
+set b [[$builderGen bgen $bGram] new]
+
+set out [$b parse {"abc"}]
+
+? {$out info class} ::C
+? {$out cget -p1} {"abc"}
+
+set b [[$builderGen bgen "
+  OPEG MyPEG (D)
+          D <- `C` p1:E (<space>+ E)+;
+  leaf:   E <- '\"' (<alnum> / '\{' / '\}')+ '\"';
+END;
+"] new]
+
+set x \{}c
+
+? {string is list $x} 0
+
+set out [$b parse "\"$x\" \"{}xz\""]
+
+? {$out info class} ::C
+? {$out cget -p1} "\"$x\""
+
+##
+## TODOS: Fix choice propagation
+##
+
+nx::Class create Base {
+  :property -accessor public p0 {
+    :public object method value=get {obj prop in} {
+      return [nx::Object create [$obj info class]::$in]
+    }
+  }
+}
+
+nx::Class create XX -superclasses Base {
+  :property p1
+}
+
+nx::Class create YY -superclasses Base {
+  :property p2
+}
+
+
+set pathGr {OPEG MyPEG (D)
+       D <- `XX` p1:A / `YY` p2:B; # TODO: top-level expression nesting is not supported (flattening): ((`XX` p1:A / `YY` p2:B))
+leaf:  A <-  'A' <digit>+;
+leaf:  B <-  'B' <digit>+;
+END;
+}
+
+# puts [$builderGen print $pathGr]
+
+set d [[$builderGen bgen $pathGr] new]
+
+? {[$d parse {B1}] info class} ::YY
+? {[$d parse {A1}] info class} ::XX
+
+## TODO: choice propagation for field paths?
+
+set pathGr {OPEG MyPEG (D)
+         D <- '1' / `XX` p1:(`$root p0 $0` A / '0' / `$root p0 $0` C) / '3' / `YY` p2:(`$root p0 $0` B);
+  leaf:  A <-  'A' <digit>+;
+  leaf:  B <-  'B' <digit>+;
+  leaf:  C <-  'C' <digit>+;
+  END;}
+
+set d [[$builderGen bgen $pathGr] new]
+
+? {[set b1 [$d parse {B1}]] info class} ::YY
+? {[$b1 cget -p2] info name} B1
+? {[set a1 [$d parse {A1}]] info class} ::XX
+? {[$a1 cget -p1] info name} A1
+? {[set c1 [$d parse {C1}]] info class} ::XX
+? {[$c1 cget -p1] info name} C1
+
+## TODO Complete ENSO geom example
+
+nx::Class create Drawing {
+  :property -accessor public lines:0..n,object,type=::Line {
+    :public object method value=get {obj value in:optional} {
+      set lines [next [list $obj $value]]
+      if {[info exists in]} {
+        foreach l $lines {
+          if {[$l cget -label] eq $in} {
+            return $l
+          }
+        }
+      } else {
+        return $lines
+      }
+    }
+  }
+}
+  
+::Line property adj:object,type=::Line
+
+# no paths:
+# Adj        <- 'adj' ' '+ DAPOSTROPH adj:Str DAPOSTROPH;
+# paths:
+
+set geom2 {
+OPEG Drawing (Drawing)
+      Drawing    <- `Drawing` 'drawing' (<space>+ lines:Line)+;
+      Line       <- `Line` 'line' ' '+ DAPOSTROPH label:Str DAPOSTROPH (' '+ points:Point2D)* ' '+ Adj?;
+      Adj        <- 'adj' ' '+ DAPOSTROPH adj:(`$root lines $0` Str) DAPOSTROPH;
+      Str        <- !DAPOSTROPH <alnum>*;
+      Point2D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
+void: DAPOSTROPH    <- '\"' ;
+END;}
+
+set builderClass [$builderGen bgen $geom2]
+set diagramBuilder [$builderClass new]
+
+puts stderr [time {set c2 [$diagramBuilder parse $aDraw]} 1000]; # ~7ms unoptimized
+
+set c2 [$diagramBuilder parse $aDraw]
+
+? {$c2 info class} ::Drawing
+set lines [$c2 cget -lines]
+? {llength $lines} 2
+lassign $lines l1 l2
+? {$l1 cget -adj} $l2
+? {[$l1 cget -adj] cget -label} [$l2 cget -label]
+? {$l2 cget -adj} $l1
+? {[$l2 cget -adj] cget -label} [$l1 cget -label]
+
+##
+## TODO: boolean assignments based on simple token structures? -->
+## predicates needed? IMO, not really, we need to be more pretentious
+## on the path/knit expressions, though.
+##
+
+nx::Class create Bool {
+  :property value:boolean
+}
+
+set boolGram {OPEG MyPEG (B)
+          B <- `Bool` value:('true' / 'false');
+END;
+}
+
+set b [[$builderGen bgen $boolGram] new]
+
+set out [$b parse {true}]
+? {$out info class} ::Bool
+? {$out cget -value} "true"
+? {string is boolean [$out cget -value]} 1
+
+set out [$b parse {false}]
+? {$out info class} ::Bool
+? {string is boolean [$out cget -value]} 1
+
+set boolGram {OPEG MyPEG (B)
+          B <- `Bool` value:('true' / 'false');
+END;}
+
+set boolGram {OPEG MyPEG (B)
+          B <- `Bool` value:(`true` '#' / `false` '##');
+END;}
+
+set b [[$builderGen bgen $boolGram] new]
+
+set out [$b parse {##}]
+? {$out info class} ::Bool
+? {string is boolean [$out cget -value]} 1
+
+set out [$b parse {#}]
+? {$out info class} ::Bool
+? {$out cget -value} "true"
+? {string is boolean [$out cget -value]} 1
+
+## TODO: What to do with non-fields in Sequences?
+## -- What does ENSO do: ENSO has field-only sequences?
+## ... Should we disallow also?
+## ... Is that a case-in-point for mappings? Inject into "mapping"
+## operations post-object construction?
+
+nx::Class create BooleanFactory -superclasses ModelFactory {
+  :public method "input B" {startIdx endIdx args} {
+    if {[info exists :current]} {
+      return ${:current}
+    } else {
+      return [Bool new -value [expr {[lindex $args 0] > [lindex $args 1]}]]
+    }
+  }
+}
+
+set nf [[$builderGen bgen {
+  OPEG MyPEG (B)
+        # TODO: Maybe allow for writing `Bool` value:(`$0 > $1` Digit ' '+ Digit)?
+        B    <- `Bool` value:('true' / 'false') / Digit ' '+ Digit;
+        Digit  <- <digit>+;
+  END;
+} [BooleanFactory new]] new]
+
+set out [$nf parse {true}]
+? {$out info class} ::Bool
+? {$out cget -value} "true"
+set out [$nf parse {20 30}]
+? {$out info class} ::Bool
+? {$out cget -value} "0"
+set out [$nf parse {30 20}]
+? {$out info class} ::Bool
+? {$out cget -value} "1"
+
+## TODO next: Merge scenario:
+## 2D Points, 3D Points, grammar + language model, plus feature model?
+
+nx::Class create Point2D {
+  :public method equal {anotherPoint} {
+    return [expr {${:x} == [$anotherPoint x get] && ${:y} == [$anotherPoint y get]}]
+  }
+}
+
+nx::Class create Point3D -superclasses Point2D {
+  :property -accessor public z:integer
+  :public method equal {anotherPoint} {
+    return [expr {[next] && ${:z} == [$anotherPoint z get]}]
+  }
+}
+
+set geom2 {
+OPEG Drawing (Drawing)
+      Drawing    <- `Drawing` 'drawing' (<space>+ lines:Line)+;
+      Line       <- `Line` 'line' ' '+ DAPOSTROPH label:Str DAPOSTROPH (' '+ points:Point2D)* ' '+ Adj?;
+      Adj        <- 'adj' ' '+ DAPOSTROPH adj:(`$root lines $0` Str) DAPOSTROPH;
+      Str        <- !DAPOSTROPH <alnum>*;
+      Point2D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
+void: DAPOSTROPH    <- '\"' ;
+END;}
+
+## 5) -> Sanity checks at all steps (OPEG validate)?
+
+## 6) pattern matching for testing:
+
+if {0} {
+  [Pattern new {Dict {
+    a {Bool -value true}
+    b {Bool -value false}
+  }}] match $out
+}
+
+##
+## Error detection and reporting; feat. Tiny example from:
+##
+## Maidl, A. M., Mascarenhas, F., & Ierusalimschy,
+## R. (2013). Exception Handling for Error Reporting in Parsing
+## Expression Grammars. In: Proc. 17th Brazilian Symposium
+## Programming Languages (SBLP 2013) (pp. 1--15). Springer.
+##
+
+set fh [open [file join [file dirname [info script]] "tiny.peg"] r]
+set tiny [read $fh]
+catch {close $fh}
+
+## minimal FFP support
+
+nx::Class create FFP {
+  :property -accessor public {ffp:substdefault {[list]}}
+  
+  # FFP: available on [complete]
+  :public method complete {} {
+    # puts FFP=${:ffp}
+    next
+  }
+
+  # FFP: actual FFP recording in the spirit of "i_error_pop_merge",
+  # without popping, naturally. At this point, "myerror", if
+  # available, carries a previously popped error-stack element.
+  :method updateFFP {} {
+    if {![info exists :ffp] || ![llength ${:ffp}]} {
+      set :ffp ${:myerror}; return
+    }
+    
+    if {![llength ${:myerror}]} {
+      return
+    }
+    
+    lassign ${:myerror} currentErrPos currentErrMsg
+    lassign ${:ffp} prevFfpPos prevFfpMsg
+    
+    if {$prevFfpPos > $currentErrPos} { return; }
+    if {$currentErrPos > $prevFfpPos} {
+      set :ffp ${:myerror}
+    }
+    # Equal locations, merge the message lists
+    set :ffp [list $currentErrPos [lsort -uniq [list {*}$prevFfpMsg {*}$currentErrMsg]]]
+  }
+
+  # Instrumentation (1): end-of-choice
+  
+  foreach m {si:void_state_merge si:value_state_merge} {
+    :method $m {} {
+      :updateFFP
+      next      
+    }
+  }
+  
+  # Instrumentation (2): mid-of-choice
+  foreach m {si:valuevoid_branch si:valuevalue_branch si:voidvoid_branch si:voidvalue_branch} {
+    :method $m {} {
+      try {set r [next]} on return {} {
+        # caught a backtracking return, update ffp
+        :updateFFP 
+        return -code return
+      }
+      return $r
+    }
+  }
+}
+
+
+set builderGen [BuilderGenerator new]
+set builderClass [$builderGen bgen $tiny]
+set tinyParser [$builderClass new]
+
+
+set p {n := 1;}
+? {lassign [$tinyParser parset $p] _ start end; set end} [expr {[string length $p]-1}]; # fully consumed?
+
+set tinyProg {
+  n := 5;
+  f := 1;
+  repeat
+    f := f * n;
+    n := n - 1
+  until n < 1;
+  write f;
+}
+
+$builderClass mixins add FFP
+
+try {
+  lassign [$tinyParser parset $tinyProg] root start end
+} on error {e} {
+  # with EOI in Tiny grammar
+  lassign $e _ loc
+  ? {set loc} 23; # points to repeat
+  ? {lindex [$tinyParser ffp get] 0} 63;  # points to begin of u(ntil).
+} on ok {r} {
+  # TODO: complete, cases without EOI
+  # prefix
+  ? {string range $tinyProg $start $end} $tinyProg
+  # suffix
+  ? {string range $tinyProg [expr {$end+1}] [string length $tinyProg]} ""
+} finally {
+  $tinyParser destroy
+}
+
+$builderClass mixins delete FFP
+
+#
+# Minimal combination support for NX/PARAM parsers (parser combinators)
+#
+
+
+pt::rde::nx public method cswitch {parentParser {instr MAIN}} {
+
+  # puts "SWITCH: $parentParser -($instr)-> [self]"
+  # puts STACKPARENT=[$parentParser eval "\${:mystackast} size"]
+  :reset {}
+  ## dump current parsing state in sub-parser
+  set myloc [$parentParser eval {:location}]
+
+  incr myloc
+  set mtoken [$parentParser eval {set :mytoken}]
+
+  if {$myloc >= [string length $mtoken]} {
+    $parentParser eval {set :myok 0}
+    # set myerror [list $myloc [list [list t $tok]]]
+    return
+  }
+
+  set dat [string range $mtoken $myloc end]
+
+  :data $dat
+  #puts myloc=$myloc,dat=$dat
+
+
+  # TODO: needed?
+  # $parentParser eval "\${:mystackloc} push ${:myloc}"
+  
+  : $instr
+
+  $parentParser eval [list set :myok ${:myok}]
+  
+  if {${:myok}} {
+    set subAst [:complete]
+    lassign $subAst nt start end
+    # puts subAst=$myloc,${:myloc},$end,$subAst
+    # TODO: in nested sub ASTs, all range markers must be bumped!
+    set subAst [list $nt $myloc [expr {$myloc + $end}]]
+    $parentParser eval "\${:mystackast} push [list $subAst]"
+    $parentParser eval [list set :myloc [expr {$myloc + $end}]]
+  } else {
+    #
+    # TODO: fix loc on error (in the error report and for the pparser)
+    #
+    set parentErr [$parentParser eval {set :myerror}]
+    lassign $parentErr oldPos oldMsg
+    lassign ${:myerror} newPos newMsg
+    set newLoc [expr {$myloc + $newPos}]
+    
+    if {$oldPos > $newLoc} {
+      return
+    }
+    if {$newLoc > $oldPos} {
+      set msg $newMsg
+    } else {
+      set msg [list {*}$oldMsg {*}$newMsg]
+    }
+    
+    $parentParser eval [list set :myerror [list $newLoc $msg]]
+    $parentParser eval [list set :myloc $newLoc]
+  }
+
+}
+
+set digit [[pt::rde::nx pgen {PEG DIGIT (digit) digit <- [0-9]; END;}] new]
+set letter [[pt::rde::nx pgen {PEG LETTER (letter) letter <- [a-z] / [A-Z]; END;}] new]
+
+? {$digit parset {1}} {digit 0 0}
+? {$letter parset {a}} {letter 0 0}
+
+set identifier [[pt::rde::nx pgen {PEG ID (id) digit <- .; letter <- .; id <- letter (letter / digit)*; END;}] new]
+
+
+
+? {$identifier parset {1}} {id 0 0 {letter 0 0}}
+
+$identifier object forward sym_letter $letter cswitch %self %method
+$identifier object forward sym_digit $digit cswitch %self %method
+
+# debug on pt/rdengine
+? {$identifier parset {a}} {id 0 0 {letter 0 0}}
+? {$identifier parset {1}} {pt::rde 0 {{cl abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ}}}
+? {$identifier parset {abc}} {id 0 2 {letter 0 0} {letter 1 1} {letter 2 2}}
+? {$identifier parset {a1}} {id 0 1 {letter 0 0} {digit 1 1}}
+# debug off pt/rdengine
+
+set dletters [[pt::rde::nx pgen {PEG LETTER (dletters) dletters <- [a-z][a-z] / [A-Z][A-Z]; END;}] new]
+set identifier2 [[pt::rde::nx pgen {PEG ID2 (id) digit <- .; dletters <- .; id <- dletters (dletters / digit)*; END;}] new]
+$identifier2 object forward sym_dletters $dletters cswitch %self %method
+$identifier2 object forward sym_digit $digit cswitch %self %method
+? {$identifier2 parset {aabb1}} {id 0 4 {dletters 0 1} {dletters 2 3} {digit 4 4}}
+? {$identifier2 parset {aab11}} {id 0 1 {dletters 0 1}}; # partial parse
+$identifier2 object mixins add FFP
+? {$identifier2 parset {aab11}} {id 0 1 {dletters 0 1}}; # partial parse + FFP
+$identifier2 object mixins delete FFP
+
+## pt_peg_to_tclparam.tcl
+proc ::pt::peg::to::tclparam::Op::n {modes symbol} {
+    # symbol mode determines AST generation
+    # void       => non-generative,
+    # leaf/value => generative.
+
+    Asm::Start
+    Asm::ReTerminal n $symbol
+
+    # TODO: limit to Parser instances, allow for late binding (cyclic
+    # relationships in the nested parser structure).
+    if {[::nsf::is object $symbol]} {
+      Asm::GenAST [list gen 1]; # TODO: get this from parser obj
+      Asm::Direct {
+        # TODO: collect the needed parent infos here, or use a
+        # redirector on the parent.
+        Asm::Tcl $symbol cswitch \[self\]
+      }
+    } else {
+      if {![dict exists $modes $symbol]} {
+        # Incomplete grammar. The symbol has no definition.
+        Asm::Direct {
+          Asm::Ins i_status_fail "; # Undefined symbol '$symbol'"
+        }
+      } else {
+        Asm::GenAST [list gen [expr { [dict get $modes $symbol] ne "void" }]]
+        Asm::Direct {
+          Asm::Self sym_$symbol
+        }
+      }
+    }
+    Asm::Done
+}
+
+# set letter [[pt::rde::nx pgen {[a-z] / [A-Z]}] new]
+
+
+[pt::rde::nx pgen {PEG DIGIT (digit) digit <- [0-9]; END;}] create ::digit
+[pt::rde::nx pgen {PEG LETTER (letter) letter <- [a-z] / [A-Z]; END;}] create ::letter
+
+
+set identifier [[[BuilderGenerator new] bgen "OPEG ID (id) id <- ::letter (::letter / ::digit)*; END;"] new]
+
+? {$identifier parset {a}} {id 0 0 {letter 0 0}}
+? {$identifier parset {1}} {pt::rde 0 {{cl abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ}}}
+? {$identifier parset {abc}} {id 0 2 {letter 0 0} {letter 1 1} {letter 2 2}}
+? {$identifier parset {a1}} {id 0 1 {letter 0 0} {digit 1 1}}
+
+## TODOS:
+##
+## 1) Parser-based builder interface (parser combination)
+##
+## 2) Implement parser-as-symbol in the intermediate (canonical) PEG
+## representation: method-call frontend to intermediate PEG.
+
+## ser=pt::grammar::peg {rules {id {is {x {n ::letter} {* {/ {n ::letter} {n ::digit}}}} mode value}} start {n id}}
+
+pt::rde::nx public method asPeg {} {
+  if {[info exists :myPeg]} {
+    return ${:myPeg}
+  } else {
+    return [list n [self]]
+  }
+}
+
+pt::rde::nx public method fromPeg {ser} {
+
+  pt::tclparam::configuration::nx def _ _ _  {pt::peg::to::tclparam configure}
+  
+  ## strip down to just the core script fragment
+  pt::peg::to::tclparam configure -template {@code@}
+  
+  set body [pt::peg::to::tclparam convert $ser]
+  
+  return [pt::rde::nx ]
+}
+
+
+pt::rde::nx public method {,} {args} {
+  set :myPeg [list x {*}[lmap p [list [self] {*}$args] {$p asPeg}]]
+  return [self]
+}
+
+pt::rde::nx public method / {args} {
+  set :myPeg [list / {*}[lmap p [list [self] {*}$args] {$p asPeg}]]
+  return [self]
+}
+
+pt::rde::nx public method * {} {
+  return [list * [:asPeg]]
+}
+
+
+
+pt::rde::nx public method -> {args} {
+  
+}
+
+
+? {[::letter , ::letter ::letter] asPeg} {x {n ::letter} {n ::letter} {n ::letter}}
+
+? {[::letter / ::digit] asPeg} {/ {n ::letter} {n ::digit}}
+
+? {[::letter *] asPeg} {* {n ::letter}}
+
+? {[[::letter / ::digit] *] asPeg} {* {/ {n ::letter} {n ::digit}}}
+
+? {[[::letter / ::digit] -> identifier] info has type "pt::rde::nx"} 1
+
+##
+## 3) fix debug support in NX engine class (use apply wrapper to set
+## the namespace context correctly)
+##
+## 4) minimize pgen/bgen interface (default to some HEADER etc.)
+##
+## 5) fit object generators into builder interface
+##
+## 6) introduce an operator other than n? to generalize the injection
+## and to avoid interactions with other PEG extension modifying the
+## syntax of identifiers/symbols?
+##
+
+exit
+
+## letter (letter / digit letter / digit )*
+set identifier [$letter , {{{{$letter : p1} / {$digit $letter} / $digit} *}}]
+set identifier [$letter , [[$letter / [$digit , $letter] / $digit] *] , $letter]
+set identifier [$letter , [[$letter / [$digit , $letter] / $digit] *] , {[0-9]+ / 'aaa'} : p2]
+
+$letter , 
+set identifier [then $letter then $letter then choice $letter $digit]
+set identifier [$letter then $letter choice ]
+
+# package req nx::serializer; this stumbles over the TclOO alien :(
+# puts identifier=[$identifier serialize]
+
+
+	    # ## clone all methods
+	    # foreach m [info class methods ${:prototype} -private] {
+	    #     lassign [info class definition ${:prototype} $m] params body
+		
+	    #     if {1} {
+	    #         :method $m $params [string map [list @body@ $body @vars@ $vars] {
+	    #     	@vars@
+	    #     	@body@
+	    #         }]
+	    #     } else {
+		
+	    #     set methodBody [string map [list @body@ $body @vars@ $vars @params@ $params] {
+	    #         try {
+	    #     	apply [list {@params@} {
+	    #     	    @vars@
+	    #     	    @body@
+	    #     	} [self]] {*}${args}
+	    #         } on return {} {
+	    #     	return -code return
+	    #         }
+	    #     }]
+	    #     :method $m {args} $methodBody
+	    # }
+	    # }  
+}
+
+
+#
+# Local variables:
+#    mode: tcl
+#    tcl-indent-level: 2
+#    indent-tabs-mode: nil
+# End:
+#

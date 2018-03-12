@@ -10,6 +10,10 @@ package ifneeded djdsl::lm 0.1 {
   source lm.tcl
 }
 
+package ifneeded djdsl::opeg 0.1 {
+  source opeg.tcl
+}
+
 
 # Local variables:
 #    mode: tcl
