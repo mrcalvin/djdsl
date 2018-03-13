@@ -160,7 +160,7 @@ apply {{version code {test ""}} {
   # pt::peg::from::peg::GEN.
   #
 
-  nx::Class create Rewriter {
+  nx::Class create Rewriter -superclasses ::nx::Class {
 
     foreach p [info commands ::pt::peg::from::peg::GEN::*] {
       :alias "input [namespace tail $p]" $p
@@ -174,10 +174,320 @@ apply {{version code {test ""}} {
     }
 
     :public method walk {ast} {
-      # TODO: this fails by not building up the [next] chain, why?
       :input {*}$ast
       # puts stderr AST=$ast
       # : input {*}$ast
+    }
+
+  }
+
+  nx::Class create Grammar -superclasses Rewriter {
+
+    nx::Class create [self]::ParserClass -superclasses nx::Class {
+      :property -accessor public generator
+      :property -accessor public factory
+
+      :method init {} {
+        if {![info exists :factory]} {
+          :factory set [::djdsl::opeg::ModelFactory new]
+        }
+      }
+    }
+    
+    :object variable parser:object [Parser new]
+
+    :property name
+    :property -accessor public start
+
+    :property -accessor public -incremental rules {
+      :public object method value=set {obj prop value} {
+        if {[$obj $prop isSet]} {
+          set value [dict merge [$obj $prop get] $value]
+        }
+        
+        next [list $obj $prop $value]
+      }
+      
+      :public object method value=isSet {obj prop args} {
+        $obj eval [list info exists :$prop]
+      }
+      
+      :public object method value=get {obj prop nt:optional} {
+        set rules [next]
+        if {[info exists nt]} {
+          dict filter $rules key $nt
+        } else {
+          return $rules
+        }
+      }
+
+      :public object method value=rhs {obj prop nt:optional} {
+        set rules [next]
+        if {[info exists nt]} {
+          dict get $rules $nt
+        } else {
+          return [dict values $rules]
+        }
+      }
+
+      :public object method value=nts {obj prop nt:optional} {
+        set rules [$obj $prop get]
+        dict keys $rules
+      }
+      
+      :public object method value=add {obj prop nt rhs} {
+        $obj eval [list dict set :$prop $nt $rhs]
+      }
+
+      :public object method value=delete {obj prop nt} {
+        $obj eval [list dict unset :$prop $nt]
+      }
+    }
+
+    :method init {} {
+      set supers [:cget -superclasses]
+      if {$supers eq "::nx::Object"} {
+        :configure -superclasses [linsert $supers[set supers {}] end-1 \
+                                      [current class]::ParserClass]
+      }
+    }
+
+    :public object method print {opegScript} {
+      ${:parser} print $opegScript
+    }
+    
+    :public object method "from script" {opegScript args} {
+      set g [:new {*}$args]
+      set opegAst [${:parser} parset $opegScript]
+      # 2) Downshape OPEG "AST" into serial PEG
+      $g load $opegAst $opegScript
+      return $g
+    }
+
+    :public object method "from rules" {rules -name -start args} {
+
+      set tmpl {OPEG @name@ (@start@)
+        @rules@
+        END;}
+      
+      set mappings [list @name@ $name @start@ $start @rules@ $rules]
+      set opegScript [string map \
+                          $mappings \
+                          $tmpl]
+      
+      return [:from script $opegScript {*}$args]
+
+    }
+
+    :public object method "from file" {filepath args} {
+      set fh [open $filepath r]
+      try {
+        set opegScript [read $fh]
+        :from script $opegScript {*}$args
+      } finally {
+        close $fh
+      }
+    }
+
+    #
+    # Parser API
+    #
+
+    :public method new {args} {
+      set cls [next [list -superclasses [namespace current]::Builder \
+                         -generator [self] \
+                         {*}$args]]
+
+      # set cls [:new -superclasses [namespace current]::Builder \
+        #                 -generator [self] \
+         #                {*}$args]
+
+      
+      ## initialize to NX/PEG backend defaults or dummies
+      pt::tclparam::configuration::nx def _ _ _  \
+          {pt::peg::to::tclparam configure}
+      
+      ## strip down to just the core script fragment
+      pt::peg::to::tclparam configure -template {@code@}
+        
+      set body [pt::peg::to::tclparam convert [:resulting asPEG]]
+      # puts body=$body
+      $cls eval $body
+
+      return [$cls new]
+    }
+
+
+    :public method resulting {args} {
+      set o [current]::resulting
+      if {![::nsf::object::exists $o]} {
+        lassign [:getResulting] rules start
+        [current class] create $o
+        $o rules set $rules
+        $o start set $start
+      }
+      $o {*}$args
+    }
+    
+    :public method asPEG {} {
+      return [list pt::grammar::peg [list rules ${:rules} start ${:start}]]
+    }
+   
+    :method getResulting {} {
+
+      #
+      # inclusion (union with override)
+      #
+      
+      set includes [list {*}[lreverse [:info heritage]] [self]]
+      set rules [dict create]
+      foreach extra $includes {
+        if {![$extra info has type [current class]]} continue;
+        set rules [dict merge $rules [$extra rules get]]
+      }
+      return [list $rules ${:start}]
+      
+    }
+    
+    #
+    # OPEG to PEG rewriter
+    #
+    :public method load {opegAst input} {
+      
+      set :(defCounter) 0
+      set pegAst [lindex [:rewrite $opegAst $input] 1]
+      unset :(defCounter)
+      ## add ctors to OPEG structure
+      # puts specs=${:specs}
+      if {[info exists :specs]} {
+        set :specs [dict map {nt specs} ${:specs} {
+          if {![llength [concat {*}$specs]]} {
+            continue
+          }
+          set specs
+        }]
+      }
+
+      set :rules [dict get $pegAst rules]
+      set :start [dict get $pegAst start]
+      array unset :{}
+      
+    }
+
+    :method "input Grammar" {s e args} {
+      if {[info exists :(fieldDefs)]} {
+
+        set tmp [dict map {fieldDef defs} ${:(fieldDefs)} {
+          if {[llength $defs] > 1} {
+            lindex $defs end 
+          } else {
+            lindex $defs 0
+          }
+          
+        }]
+        # lappend args {*}[concat {*}[dict values ${:fieldDefs}]]
+        lappend args {*}[dict values $tmp]
+        unset :(fieldDefs)
+      }
+      next [list $s $e {*}$args]
+    }
+    
+    :method "input Ctor" {s e args} {
+      return [list c [lindex $args 0 1]]
+    }
+
+    :method "input Command" {s e args} {
+      # operates like Ident
+      return [:input Ident $s $e]
+    }
+
+    :method "input Field" {s e args} {
+      set args [lassign $args field]
+
+      set ntIdent "_FIELD_${:(defCounter)}_[lindex $field 1]"
+      # 1) compile + register 'field' definitions.
+      #
+      # _1_x {is {n Digit} mode value} _1_y {is {n Digit} mode value}
+      
+      dict lappend :(fieldDefs) $ntIdent [pt::peg::from::peg::GEN::Definition $s $e "value" [list n $ntIdent] [lindex $args 0]]
+      # 
+      # 2) inject reference to 'field' definition identifiers
+      #
+      # {n x} {n Digit} -> n _1_x
+
+      #
+      # 3) Are there "fixes" (paths) to consider later on? This ressembles the
+      # behavior in "input Definition" -> refactor?
+      #
+      set f [lindex $field 1]
+      if {[info exists :(choices)]} {
+        # puts stderr choices=${:choices}
+        set c [lindex ${:(choices)} end]
+        # puts stderr c=${:choices}
+        # lappend f $c
+        # puts stderr f=$f
+        dict set :specs $ntIdent $c
+        ## piggyback onto :spec
+        unset :(choices)
+      }
+      # lappend :fields $f
+      
+      return [list n $ntIdent]
+    }
+
+    ## pt::peg::from::peg::GEN::Identifier
+    # :method "input Identifier" {s e args} {
+    # # args = list/1 (symbol)       | <-  Ident(ifier)
+    # # args = list/n (field symbol) | <-  Field Ident(ifier)
+    # if {[llength $args] == 2} {
+    #      }
+    # next [list $s $e {*}$args]
+    # }
+
+    :method "input Sequence" {s e args} {
+      # args = list/1 (class) 
+      # args = list/n (list/1 ...) (gtor prefix ...)
+      set ctor [lindex $args 0]
+      set spec [dict create]
+      if {[llength $args] > 1 && [lindex $ctor 0] eq "c"} {
+        # TODO: can there be more than one fix at a time? Test: dict
+        # set spec generator [lrange $ctor 1 end]
+        dict set spec generator [lindex $ctor 1]
+        set args [lrange $args 1 end]
+      }
+
+      # TODO: Remove?
+      if {[info exists :(fields)] && [llength ${:(fields)}]} {
+        dict set spec fields ${:(fields)}
+        unset :(fields)
+      }
+      
+      list $spec {*}[next [list $s $e {*}$args]]
+    }
+
+    :method "input Expression" {s e args} {
+      set rargs [list]
+      set choices [list]
+      foreach i $args {
+        set resid [lassign $i spec]
+        # TODO: stack them up for validation, over multiple levels of
+        # (sub-)expressions!
+        lappend choices $spec; 
+        lappend rargs $resid
+      }
+      lappend :(choices) $choices
+      next [list $s $e {*}$rargs]
+    }
+    
+    :method "input Definition" {s e args} {
+      incr :(defCounter)
+      set def [next]
+      if {[info exists :(choices)]} {
+        set c [lindex ${:(choices)} end]
+        dict set :specs [lindex $def 0] $c
+        unset :(choices)
+      }
+      return $def
     }
 
   }
@@ -224,7 +534,7 @@ apply {{version code {test ""}} {
         # 2) Downshape OPEG "AST" into serial PEG
         set ser [:rewrite $opegAst $opegScript]
         # 3) Generate PEG+ parser bundle
-        # puts ser=$ser
+        puts ser=$ser
         ## initialize to NX/PEG backend defaults or dummies
         pt::tclparam::configuration::nx def _ _ _  \
             {pt::peg::to::tclparam configure}
@@ -564,7 +874,7 @@ apply {{version code {test ""}} {
         }
       }
       $factory eval {unset :sourcecode}
-
+      
       set root [lindex $list end]
 
       # TODO: relocate into factory object and turn it into a fixup
@@ -680,7 +990,7 @@ apply {{version code {test ""}} {
     }
   }; # Builder
 
-  namespace export Parser BuilderGenerator ModelFactory
+  namespace export Parser BuilderGenerator ModelFactory Grammar
   
 } {
 
@@ -716,30 +1026,22 @@ leaf: Num         <- Sign? Digit+                      			       ;
   }
 
   #
-  # An instance of ```BuilderGenerator``` is provided the OPEG and,
+  # An instance of ```Grammar``` is provided the OPEG and,
   # optionally, a custom ```ModelFactory``` to generate a combined
-  # parser+builder for this OPEG.
+  # parser + builder for this OPEG.
   #
   
-  set builderGen [BuilderGenerator new]
-  set builderClass [$builderGen bgen rules -name Calculator -start Term $g]
-  set builder [$builderClass new]
+  set grammar [Grammar from rules $g -name Calculator -start Term]
+  set builder [$grammar new]
 
   #
   # The method ```parse``` can be used to submit input into the
   # parsing pipeline.  The output, on success, is a valid
   # instantiation of the language model.
   #
+
   set rObj [$builder parse {1+2}]
   
-  #
-  # Using the ```Builder``` ```parset``` method, sentences in the
-  # language described by the OPEG can be processed into instances of
-  # the domain model directly.
-  #
-
-  set rObj [$builder parse {1+2}]
-
   ? {$rObj info class} ::Binary
   ? {[$rObj lhs get] info class} ::Const
   ? {[$rObj lhs get] cget -value} 1
@@ -747,8 +1049,7 @@ leaf: Num         <- Sign? Digit+                      			       ;
   ? {[$rObj rhs get] cget -value} 2
   ? {$rObj cget -op} "+"
 
-  # debug off pt/rdengine
-
+ 
   set rObj [$builder parse {5}]
   ? {$rObj info class} ::Const
   ? {$rObj cget -value} "5"
@@ -780,11 +1081,8 @@ leaf: Num         <- Sign? Digit+                      			       ;
   # The custom factory is then passed to the ```bgen``` generator
   # method.
   
-  set builderGen [BuilderGenerator new]
-  set builderClass [$builderGen bgen rules -name Calculator -start Term $g \
-                        [CalculatorFactory new]]
-  set builder [$builderClass new]
-
+  set grammar [Grammar from rules $g -name Calculator -start Term]
+  set builder [$grammar new -factory [CalculatorFactory new]]
 
   #
   # Another examplary domain model (as an NX class model)
@@ -803,8 +1101,8 @@ leaf: Num         <- Sign? Digit+                      			       ;
     leaf:  Digit1       <- <digit>+;
     END;}
 
-  set builderClass [$builderGen bgen script $g2a]
-  set coordBuilder [$builderClass new]
+  set coordGrammar [Grammar from script $g2a]
+  set coordBuilder [$coordGrammar new]
 
   ? {[$coordBuilder parse {(11,2)}] info class} ::Point
   ? {[$coordBuilder parse {(3,4)}] cget -y} 4
@@ -821,9 +1119,9 @@ leaf: Num         <- Sign? Digit+                      			       ;
     leaf:  Digit       <- <digit>+;
     END;}
 
-  set builderClass [$builderGen bgen script $g2b]
-  set coordBuilder [$builderClass new]
-
+  set coordGrammar [Grammar from script $g2b]
+  set coordBuilder [$coordGrammar new]
+  
   ? {[$coordBuilder parse {(1,2)}] info class} ::Point
   ? {[$coordBuilder parse {(3,4)}] cget -y} 4
 
@@ -843,9 +1141,9 @@ leaf: Num         <- Sign? Digit+                      			       ;
     leaf:  Digit       <- <digit>+;
     END;}
 
-  set builderClass [$builderGen bgen script $g2c]
-  set coordBuilder [$builderClass new]
-
+  set coordGrammar [Grammar from script $g2c]
+  set coordBuilder [$coordGrammar new]
+  
   ? {[$coordBuilder parse {(1,2)}] info class} ::Point
   ? {[$coordBuilder parse {(3,4)}] cget -y} 4
 

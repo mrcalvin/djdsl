@@ -29,19 +29,66 @@ namespace eval ::djdsl::opeg::test {
       unset -nocomplain v
     }
   }
-  
-  test opeg-0.1 "union with override" -setup $SETUP -body {
-    set (builder) [[set (eLangBuilder) [$(builderGen) bgen rules -name ELang -start STAT {
+
+  test opeg-0.1 "PG, loading from rules" -setup $SETUP -body {
+    set (eLangGrm) [Grammar from rules {
       STAT <- (EXPR ';')+;
       EXPR <- INT;
       INT  <- <digit>+;
       ID   <- <alpha>+;
 void: WS   <- <space>+;
-    }]] new]
+    } -name ELang -start STAT]
 
-    lappend () [$(builder) info has type ::pt::rde::nx]
+    lappend () [$(eLangGrm) info has type ::djdsl::opeg::Grammar]
 
-  } -cleanup $CLEANUP -result "1"
+    set (eLangParser) [$(eLangGrm) new]
+
+    lappend () [$(eLangParser) info has type ::pt::rde::nx]
+
+  } -cleanup $CLEANUP -result "1 1"
+
+  
+  test opeg-0.2 "PG inclusion" -setup $SETUP -body {
+    set (eLangGrm) [Grammar from rules {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+      ID   <- <alpha>+;
+void: WS   <- <space>+;
+    } -name ELang -start STAT]
+    
+    lappend () [$(eLangGrm) info has type ::djdsl::opeg::Grammar]
+
+    lappend () [lsort [$(eLangGrm) rules nts]]
+
+    # A second (including, receiving) PG
+
+    set (myELang) [Grammar from rules {
+      EXPR <- INT / ID;
+      INT  <- <digit>+;
+    } -name MyELang -start STAT -superclasses $(eLangGrm)]
+
+    lappend () [$(myELang) info has type ::djdsl::opeg::Grammar]
+
+    lappend () [lsort [$(myELang) rules nts]]
+
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    lappend () [lsort [[$(myELang) resulting] rules nts]]
+
+    [$(myELang) new -factory [set (mf) [ModelFactory new {
+      :public object method "input EXPR" {s e args} {
+        incr :counter
+        return
+      }
+    }]]] parse {1;a;}
+
+    lappend () [$(mf) eval {set :counter}]
+    
+  } -cleanup $CLEANUP -result [list 1 {EXPR ID STAT WS} 1 {EXPR INT} \
+                                   {EXPR ID INT STAT WS} {EXPR ID INT STAT WS} \
+                                   2]
+
+  # Rules command/query interface
   
 }
 
