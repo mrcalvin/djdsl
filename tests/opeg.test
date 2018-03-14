@@ -54,6 +54,8 @@ void: WS   <- <space>+;
       EXPR <- INT;
       ID   <- <alpha>+;
 void: WS   <- <space>+;
+      X    <- Y;
+      Y    <- Z;      
     } -name ELang -start STAT]
     
     lappend () [$(eLangGrm) info has type ::djdsl::opeg::Grammar]
@@ -84,8 +86,8 @@ void: WS   <- <space>+;
 
     lappend () [$(mf) eval {set :counter}]
     
-  } -cleanup $CLEANUP -result [list 1 {EXPR ID STAT WS} 1 {EXPR INT} \
-                                   {EXPR ID INT STAT WS} {EXPR ID INT STAT WS} \
+  } -cleanup $CLEANUP -result [list 1 {EXPR ID STAT WS X Y} 1 {EXPR INT} \
+                                   {EXPR ID INT STAT} {EXPR ID INT STAT} \
                                    2]
 
   # Rules command/query interface

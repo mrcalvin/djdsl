@@ -21,7 +21,7 @@ namespace eval ::pt::rde {
     }
 
     :public object method pgen {frontendPeg} {
-
+      
       # We might also use opeg::Rewriter here, as the OO wrapper, but
       # this would render pgen dependent on the opeg package.
       set ser [pt::peg::from::peg convert $frontendPeg]
@@ -330,22 +330,76 @@ apply {{version code {test ""}} {
     }
     
     :public method asPEG {} {
-      return [list pt::grammar::peg [list rules ${:rules} start ${:start}]]
+      set peg [list pt::grammar::peg [list rules ${:rules} start ${:start}]]
+      pt::peg verify-as-canonical $peg
+      return $peg
     }
-   
+
+    :method getUseful {rules accessed Ne} {
+      #
+      # Remove useless (empty + inaccessible) rules. In essence, this
+      # is an implementation variant of Aho's and Ullman's algorithms
+      # 2.7, 2.8, and 2.9, TPTC, Chapter 2, pp. 144. A difference is
+      # that we do not maintain a set of terminals, in the strictest
+      # sense, but a set of nonterminals that can recognize a terminal
+      # (Ne). This is grown recursively, to include transitively dependent
+      # nonterminals to arrive at a final Ne. This procedure has a
+      # worst-case time complexity of O(n+1), with n being the number
+      # of nonterminals defined (all LHS and RHS).
+      #
+      
+      set N [llength [lsort -unique [concat {*}$accessed]]]
+
+      set i 0
+      while {$i <= $N} {
+        incr i
+        set next $Ne
+        dict for {k v} $accessed {
+          foreach nt $v {
+            if {$nt in [dict keys $Ne]} {
+              dict incr next $k
+            }
+          }
+        }
+        if {[dict size $next] != [dict size $Ne]} {
+          set Ne $next
+        } else {
+          break
+        }
+      }
+    
+      set accessed [dict filter $accessed script {k v} {dict exists $Ne $k}]
+      set called [list ${:start} {*}[concat {*}[dict values $accessed]]]
+      
+      return [dict filter $rules script {k v} {expr {$k in $called}}]
+    }
+    
     :method getResulting {} {
 
       #
-      # inclusion (union with override)
+      # inclusion (union with override, TODO: disjoint union)
       #
       
       set includes [list {*}[lreverse [:info heritage]] [self]]
       set rules [dict create]
+      set accessed [dict create]
+      set terminals [dict create]
       foreach extra $includes {
         if {![$extra info has type [current class]]} continue;
         set rules [dict merge $rules [$extra rules get]]
+        set accessed [dict merge $accessed [$extra eval {set :accessed}]]
+        set terminals [dict merge $terminals [$extra eval {set :terminals}]]
       }
-      return [list $rules ${:start}]
+      
+
+      # puts rules=$rules
+      # puts accessed=$accessed
+      # puts terminals=$terminals
+
+      set rules [:getUseful $rules $accessed $terminals]
+
+      # puts RESRULES=$rules
+      return [list $rules [list n ${:start}]]
       
     }
     
@@ -369,7 +423,8 @@ apply {{version code {test ""}} {
       }
 
       set :rules [dict get $pegAst rules]
-      set :start [dict get $pegAst start]
+      set :start [lindex [dict get $pegAst start] 1]
+      
       array unset :{}
       
     }
@@ -396,6 +451,7 @@ apply {{version code {test ""}} {
       return [list c [lindex $args 0 1]]
     }
 
+    # TODO: Is this needed?
     :method "input Command" {s e args} {
       # operates like Ident
       return [:input Ident $s $e]
@@ -478,15 +534,63 @@ apply {{version code {test ""}} {
       lappend :(choices) $choices
       next [list $s $e {*}$rargs]
     }
+
+    #
+    # The intercepting method on Primary is meant to bookkeep about
+    # the presence of nonterminals or terminals at the RHS of a given
+    # rule definition. This bookkeeping data is then stored in
+    # Definition (and StartExpr) along with the rule, to be used
+    # latter on (perfective) transformations on the parser definition.
+    #
+    # As an alternative, one might use the ::pt::pe::op::* operations
+    # on the canonical PE representation (e.g., ::pt::pe::op::called)
+    # ; but we obtain them early to avoid extra and repeated passes
+    # over the PE/PG representations.
+    #
+    
+    :method "input StartExpr" {s e args} {
+      unset -nocomplain :(accessed)
+      unset -nocomplain :(terminals)
+      next
+    }
+
+    
+    :method "input Primary" {s e args} {
+      set prim [next]
+      if {[lindex $prim 0] eq "n"} {
+        lappend :(accessed) [lindex $prim 1]
+      } else {
+        incr :(terminals)
+      }
+      return $prim
+    }
+
     
     :method "input Definition" {s e args} {
       incr :(defCounter)
       set def [next]
+      set nt [lindex $def 0]
       if {[info exists :(choices)]} {
         set c [lindex ${:(choices)} end]
-        dict set :specs [lindex $def 0] $c
+        dict set :specs $nt $c
         unset :(choices)
       }
+      
+      if {[info exists :(accessed)]} {
+        set notRecursive [lsearch -not -exact -inline -all ${:(accessed)} $nt]
+        # puts def($nt)=${:(accessed)},NR=$notRecursive
+        if {[llength $notRecursive]} {
+          dict lappend :accessed $nt {*}$notRecursive
+        }
+      }
+
+      if {[info exists :(terminals)]} {
+        dict set :terminals $nt ${:(terminals)}
+      }
+      
+      unset -nocomplain :(accessed)
+      unset -nocomplain :(terminals)
+      
       return $def
     }
 
