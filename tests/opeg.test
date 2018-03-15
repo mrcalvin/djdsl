@@ -4,6 +4,7 @@ package require tcltest
 package require djdsl::opeg
 
 
+
 namespace eval ::djdsl::opeg::test {
   namespace import ::tcltest::*
   namespace import ::djdsl::opeg::*
@@ -90,7 +91,90 @@ void: WS   <- <space>+;
                                    {EXPR ID INT STAT} {EXPR ID INT STAT} \
                                    2]
 
+  test opeg-0.3 "Useless removal: Wrong order" -setup $SETUP -body {
+    
+    set (myLangGrm) [Grammar from rules {
+      S <- A B / 'a';
+      A <- 'a' A;
+      B <- 'b';
+    } -start S -name MyLang]
+
+    set container [::djdsl::opeg::Grammar::Container new -grammar $(myLangGrm)]
+
+    lappend () [$(myLangGrm) rules nts]
+
+    ::pt::peg::op drop unreachable $container
+    lappend () [$(myLangGrm) rules nts]
+
+    ::pt::peg::op drop unrealizable $container
+    lappend () [$(myLangGrm) rules nts]
+
+    ::pt::peg::op flatten $container
+    lappend () [$(myLangGrm) rules get]
+    
+    
+  } -cleanup $CLEANUP -result [list {A B S} \
+                                   {A B S} \
+                                   {B S} \
+                                   {B {t b} S {t a}}]
+
+  test opeg-0.4 "Useless removal: Correct order" -setup $SETUP -body {
+
+    package req pt::peg::op    
+    
+    set (myLangGrm) [Grammar from rules {
+      S <- A B / 'a';
+      A <- 'a' A;
+      B <- 'b';
+    } -start S -name MyLang]
+
+    set container [::djdsl::opeg::Grammar::Container new -grammar $(myLangGrm)]
+
+    lappend () [$(myLangGrm) rules nts]
+
+    ::pt::peg::op drop unrealizable $container
+    lappend () [$(myLangGrm) rules nts]
+
+    ::pt::peg::op drop unreachable $container
+    lappend () [$(myLangGrm) rules nts]
+
+    ::pt::peg::op flatten $container
+    lappend () [$(myLangGrm) rules get]
+    
+    
+  } -cleanup $CLEANUP -result [list {A B S} \
+                                   {B S} \
+                                   {S} \
+                                   {S {t a}}]
+
+  
   # Rules command/query interface
+
+  test opeg-1.1 "Rule(s): rename" -setup $SETUP -body {
+    set (eLangGrm) [Grammar from rules {
+      STAT <- (EXPR ';')+ ;
+      EXPR <- INT;
+      INT   <- <digit>+;
+    } -name ELang -start STAT]
+    
+    lappend () [$(eLangGrm) rules nts]
+    
+    $(eLangGrm) rules rename INT TIN
+    
+    lappend () [$(eLangGrm) rules nts]
+
+    # TIN rule is inaccessible, EXPR can't recognize a terminal; AND:
+    # STAT can't recognize a terminal structure without EXPR being
+    # useful, so all become dropped!
+    
+    lappend () [[$(eLangGrm) resulting] rules nts]; 
+    
+  } -cleanup $CLEANUP -result [list {EXPR INT STAT} {EXPR STAT TIN} {}] 
+
+  test opeg-1.2 "Rule(s): rename for restriction" -setup $SETUP -body {
+    
+  }
+
   
 }
 

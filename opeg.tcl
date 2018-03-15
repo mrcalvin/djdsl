@@ -1,5 +1,6 @@
 package req nx
 package require pt::rde::nx
+package req pt::peg::op
 
 set fh [open [file join [file dirname [info script]] "opeg.peg"] r]
 set g [read $fh]
@@ -193,14 +194,69 @@ apply {{version code {test ""}} {
         }
       }
     }
+
+    nx::Class create [self]::Container {
+
+      :property grammar
+
+      #
+      # Provide a subset of the pt::peg::container, as needed by the PG
+      # transformations (non-recognizing? inaccessible?)
+      #
+
+      :public method start {pe:optional} {
+        if {[info exists pe]} {
+          set pe {[llength $pe] > 1 ? [lindex $pe 1] : $pe}
+          ${:grammar} start set 
+        } else {
+          list n [${:grammar} start get]
+        }
+      }
+
+      :public method nonterminals {} {
+        ${:grammar} rules nts
+      }
+
+      :public method rules {d:optional} {
+        if {[info exists d]} {
+          ${:grammar} rules set $d
+        } else {
+          ${:grammar} rules get
+        }
+      }
+
+      :public method rule {nt r:optional} {
+        if {[info exists r]} {
+          ${:grammar} rules add $nt $r
+        } else {
+          ${:grammar} rules rhs $nt
+        }
+      }
+
+      :public method exists {nt} {
+        ${:grammar} rules isSet $nt
+      }
+
+      :public method remove {args} {
+        foreach nt $args {
+          ${:grammar} rules delete $nt
+        }
+
+      }
+
+      
+    };# Container
+    
     
     :object variable parser:object [Parser new]
 
     :property name
     :property -accessor public start
+    :property -accessor public modes
 
     :property -accessor public -incremental rules {
-      :public object method value=set {obj prop value} {
+      :public object method value=set {obj prop value} {        
+
         if {[$obj $prop isSet]} {
           set value [dict merge [$obj $prop get] $value]
         }
@@ -208,12 +264,17 @@ apply {{version code {test ""}} {
         next [list $obj $prop $value]
       }
       
-      :public object method value=isSet {obj prop args} {
-        $obj eval [list info exists :$prop]
+      :public object method value=isSet {obj prop nt:optional} {
+        set isDictSet [$obj eval [list info exists :$prop]]
+        if {![info exists nt]} {
+          return $isDictSet
+        } else {
+          return [expr {$isDictSet && [dict exists [$obj $prop get] $nt]}]
+        }
       }
       
       :public object method value=get {obj prop nt:optional} {
-        set rules [next]
+        set rules [next [list $obj $prop]]
         if {[info exists nt]} {
           dict filter $rules key $nt
         } else {
@@ -222,7 +283,7 @@ apply {{version code {test ""}} {
       }
 
       :public object method value=rhs {obj prop nt:optional} {
-        set rules [next]
+        set rules [$obj $prop get]
         if {[info exists nt]} {
           dict get $rules $nt
         } else {
@@ -241,6 +302,12 @@ apply {{version code {test ""}} {
 
       :public object method value=delete {obj prop nt} {
         $obj eval [list dict unset :$prop $nt]
+        $obj eval [list dict unset :modes $nt]
+      }
+
+      :public object method value=rename {obj prop oldNt newNt} {
+        $obj rename $oldNt $newNt
+        $obj $prop get $newNt
       }
     }
 
@@ -321,16 +388,32 @@ apply {{version code {test ""}} {
     :public method resulting {args} {
       set o [current]::resulting
       if {![::nsf::object::exists $o]} {
-        lassign [:getResulting] rules start
+        lassign [:getResulting] rules start modes
         [current class] create $o
+
         $o rules set $rules
         $o start set $start
+        $o modes set $modes
+
+        set container [::djdsl::opeg::Grammar::Container new -grammar $o]
+
+        ::pt::peg::op drop unrealizable $container
+        ::pt::peg::op drop unreachable $container
+        ::pt::peg::op flatten $container
+
+        $container destroy
       }
       $o {*}$args
     }
     
     :public method asPEG {} {
-      set peg [list pt::grammar::peg [list rules ${:rules} start ${:start}]]
+      set rules [dict create]
+
+      dict for {nt rhs} ${:rules} {
+        dict set rules $nt [list is $rhs mode [dict get ${:modes} $nt]]
+      }
+      set peg [list pt::grammar::peg [list rules $rules start ${:start}]]
+      # puts peg=$peg
       pt::peg verify-as-canonical $peg
       return $peg
     }
@@ -367,10 +450,11 @@ apply {{version code {test ""}} {
           break
         }
       }
-    
+
       set accessed [dict filter $accessed script {k v} {dict exists $Ne $k}]
+
       set called [list ${:start} {*}[concat {*}[dict values $accessed]]]
-      
+
       return [dict filter $rules script {k v} {expr {$k in $called}}]
     }
     
@@ -384,24 +468,69 @@ apply {{version code {test ""}} {
       set rules [dict create]
       set accessed [dict create]
       set terminals [dict create]
+      set modes [dict create]
       foreach extra $includes {
         if {![$extra info has type [current class]]} continue;
         set rules [dict merge $rules [$extra rules get]]
         set accessed [dict merge $accessed [$extra eval {set :accessed}]]
         set terminals [dict merge $terminals [$extra eval {set :terminals}]]
+        set modes [dict merge $modes [$extra eval {set :modes}]]
       }
       
 
       # puts rules=$rules
       # puts accessed=$accessed
       # puts terminals=$terminals
+      # puts MERGE:modes=$modes
 
-      set rules [:getUseful $rules $accessed $terminals]
-
-      # puts RESRULES=$rules
-      return [list $rules [list n ${:start}]]
+      # set rules [:getUseful $rules $accessed $terminals]
+      return [list $rules [list n ${:start}] $modes]
       
     }
+
+    :public method rename {oldNt newNt} {
+      if {[dict exists ${:rules} $oldNt] && ![dict exists ${:rules} $newNt]} {
+        dict set :rules $newNt [dict get ${:rules} $oldNt]
+        dict unset :rules $oldNt
+      } else {
+        throw [list DJDSL OPEG GRAMMAR RENAME [self] $oldNt $newNt] \
+            "Renaming a rule from '$oldNt' to '$newNt' failed."
+      }
+
+      if {[info exists :accessed]} {
+        # LHS renaming
+        if {[dict exists ${:accessed} $oldNt]} {
+          dict set :accessed $newNt [dict get ${:accessed} $oldNt]
+          dict unset :accessed $oldNt
+        }
+
+        if {0} {
+          # RHS renaming
+          set rewritten [dict create]
+          puts BEFORE=${:accessed}
+          dict for {k v} ${:accessed} {
+            puts "$oldNt in $v"
+            if {$oldNt in $v} {
+              set v [lsearch -exact -not -all -inline $v $oldNt]
+              lappend v $newNt
+            }
+            dict set rewritten $k $v
+          }
+          set :accessed $rewritten
+        }
+      }
+      # puts ACCESSED=${:accessed}
+
+      # puts TERMINALS=${:terminals}
+      if {[dict exists ${:terminals} $oldNt]} {
+        dict set :terminals $newNt [dict get ${:terminals} $oldNt]
+        dict unset :terminals $oldNt
+      }
+      # puts TERMINALS=${:terminals}
+
+      return
+    } 
+
     
     #
     # OPEG to PEG rewriter
@@ -422,7 +551,12 @@ apply {{version code {test ""}} {
         }]
       }
 
-      set :rules [dict get $pegAst rules]
+      dict for {nt rhs} [dict get $pegAst rules] {
+        array set "" $rhs
+        dict set :rules $nt $(is)
+        dict set :modes $nt $(mode) 
+      }
+      # puts LOAD=rules=${:rules},modes=${:modes}
       set :start [lindex [dict get $pegAst start] 1]
       
       array unset :{}
