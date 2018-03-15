@@ -92,6 +92,8 @@ void: WS   <- <space>+;
                                    2]
 
   test opeg-0.3 "Useless removal: Wrong order" -setup $SETUP -body {
+
+    # Example taken from http://kilby.stanford.edu/~rvg/154/handouts/useless.html
     
     set (myLangGrm) [Grammar from rules {
       S <- A B / 'a';
@@ -172,10 +174,51 @@ void: WS   <- <space>+;
   } -cleanup $CLEANUP -result [list {EXPR INT STAT} {EXPR STAT TIN} {}] 
 
   test opeg-1.2 "Rule(s): rename for restriction" -setup $SETUP -body {
-    
-  }
 
-  
+    set (eLangGrm) [Grammar from rules {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+      ID   <- WS* <alpha>+ WS*;
+void: WS   <- <space>;
+    } -name ELang -start STAT]
+    
+    lappend () [lsort [$(eLangGrm) rules nts]]
+
+    # A second (including, receiving) PG
+    
+    set (myELang) [Grammar from rules {
+      EXPR <- INT / ID;
+      INT  <- <digit>+;
+    } -name MyELang -start STAT -superclasses $(eLangGrm) {
+      # Transformations applied on resulting definition
+      :rules rename WS _
+    }]
+
+    lappend () [lsort [$(myELang) rules nts]]
+
+    puts ">>> [$(myELang) resulting rules get]"
+    lappend () [lsort [$(myELang) resulting rules nts]]
+    
+    [$(myELang) new -factory [set (mf) [ModelFactory new {
+      :public object method "input EXPR" {s e args} {
+        incr :counter
+        return
+      }
+    }]]] parse {1;a;}
+
+    lappend () [$(mf) eval {set :counter;}]
+    
+  } -cleanup $CLEANUP -result [list {EXPR ID STAT WS} {EXPR INT} {EXPR ID INT STAT} 2] 
+
+
+  # TODO: ... Why does [$container reachable] contain 'n'?
+  #       ... Can superfluous epsilons in sequences be eliminated? flattens? in:
+  #        ... {x epsilon {+ alpha} epsilon}
+  #       ... Issue: restriction via renaming vs. PG transformations?
+  #       When a rule gets renamed, its usefulness cannot be
+  #       determined anymore based on its RHS. This may change
+  #       transformations, whether relevant details are encoded at the caller's
+  #       site (calling RHS) or at the callee's side (called RHS).
 }
 
 return

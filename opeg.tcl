@@ -198,6 +198,7 @@ apply {{version code {test ""}} {
     nx::Class create [self]::Container {
 
       :property grammar
+      :property all
 
       #
       # Provide a subset of the pt::peg::container, as needed by the PG
@@ -215,6 +216,7 @@ apply {{version code {test ""}} {
 
       :public method nonterminals {} {
         ${:grammar} rules nts
+        # return ${:all}
       }
 
       :public method rules {d:optional} {
@@ -246,6 +248,15 @@ apply {{version code {test ""}} {
 
       
     };# Container
+
+    :protected method __object_configureparameter {} {
+      set spec [next]
+      lreplace $spec[set spec {}] end end transforms:alias,optional
+    }
+    ::nsf::parameter::cache::classinvalidate [current]
+    :protected method transforms {script} {
+      set :transforms $script
+    }
     
     
     :object variable parser:object [Parser new]
@@ -388,17 +399,50 @@ apply {{version code {test ""}} {
     :public method resulting {args} {
       set o [current]::resulting
       if {![::nsf::object::exists $o]} {
-        lassign [:getResulting] rules start modes
+        lassign [:getResulting] rules start modes all
         [current class] create $o
 
         $o rules set $rules
         $o start set $start
         $o modes set $modes
 
-        set container [::djdsl::opeg::Grammar::Container new -grammar $o]
+        if {[info exists :transforms]} {
+          $o eval ${:transforms}
+        }
 
+        # check for orphans
+        set container [::djdsl::opeg::Grammar::Container new -grammar $o -all $all]
+        set inReach [::pt::peg::op reachable $container]
+        set defined [$container nonterminals]
+        puts ALL=$all=VS=DEFINED=$defined
+
+        set orhpans [list]
+        foreach reach $inReach {
+          if {$reach ni $defined} {
+            lappend orphans $reach
+          }
+        }
+        
+        puts ORPHANS=$orphans
+
+
+        if {0 && [llength $orphans]} {
+          foreach symbol [$container nonterminals] {
+            $container rule $symbol \
+                [pt::pe::op drop $orphans \
+                     [$container rule $symbol]]
+          }
+        }
+        ::pt::peg::op flatten $container
+        puts RULES=[$o rules get]
+        puts REALIZABLE=[::pt::peg::op realizable $container]
+        puts REACHABLE=[::pt::peg::op reachable $container]
         ::pt::peg::op drop unrealizable $container
+        puts =============
+        puts RULES=[$o rules get]
         ::pt::peg::op drop unreachable $container
+        puts RULES=[$o rules get]
+        
         ::pt::peg::op flatten $container
 
         $container destroy
@@ -484,7 +528,7 @@ apply {{version code {test ""}} {
       # puts MERGE:modes=$modes
 
       # set rules [:getUseful $rules $accessed $terminals]
-      return [list $rules [list n ${:start}] $modes]
+      return [list $rules [list n ${:start}] $modes [lsort -unique [concat {*}$accessed]]]
       
     }
 
@@ -522,7 +566,7 @@ apply {{version code {test ""}} {
       # puts ACCESSED=${:accessed}
 
       # puts TERMINALS=${:terminals}
-      if {[dict exists ${:terminals} $oldNt]} {
+      if {[info exists :terminals] && [dict exists ${:terminals} $oldNt]} {
         dict set :terminals $newNt [dict get ${:terminals} $oldNt]
         dict unset :terminals $oldNt
       }
@@ -781,7 +825,7 @@ apply {{version code {test ""}} {
         pt::peg::to::tclparam configure -template {@code@}
         
         set body [pt::peg::to::tclparam convert $ser]
-        # puts stderr body=$body
+        #puts stderr body=$body
         set cls [[current class]::Class new \
                      -superclasses [namespace current]::Builder \
                      -factory $modelFactory \
