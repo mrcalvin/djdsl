@@ -196,7 +196,42 @@ void: WS   <- <space>;
 
     lappend () [lsort [$(myELang) rules nts]]
 
-    puts ">>> [$(myELang) resulting rules get]"
+    lappend () [lsort [$(myELang) resulting rules nts]]
+    
+    [$(myELang) new -factory [set (mf) [ModelFactory new {
+      :public object method "input EXPR" {s e args} {
+        incr :counter
+        return
+      }
+    }]]] parse {1;a;}
+
+    lappend () [$(mf) eval {set :counter;}]
+    
+  } -cleanup $CLEANUP -result [list {EXPR ID STAT WS} {EXPR INT} {EXPR ID INT STAT} 2]
+
+    test opeg-1.2 "Rule(s): rename for restriction" -setup $SETUP -body {
+
+    set (eLangGrm) [Grammar from rules {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+      ID   <- WS* <alpha>+ WS*;
+void: WS   <- <space>;
+    } -name ELang -start STAT]
+    
+    lappend () [lsort [$(eLangGrm) rules nts]]
+
+    # A second (including, receiving) PG
+    
+    set (myELang) [Grammar from rules {
+      EXPR <- INT / ID;
+      INT  <- <digit>+;
+    } -name MyELang -start STAT -superclasses $(eLangGrm) {
+      # Transformations applied on resulting definition
+      :rules rename WS _
+    }]
+
+    lappend () [lsort [$(myELang) rules nts]]
+
     lappend () [lsort [$(myELang) resulting rules nts]]
     
     [$(myELang) new -factory [set (mf) [ModelFactory new {
@@ -210,7 +245,6 @@ void: WS   <- <space>;
     
   } -cleanup $CLEANUP -result [list {EXPR ID STAT WS} {EXPR INT} {EXPR ID INT STAT} 2] 
 
-
   # TODO: ... Why does [$container reachable] contain 'n'?
   #       ... Can superfluous epsilons in sequences be eliminated? flattens? in:
   #        ... {x epsilon {+ alpha} epsilon}
@@ -223,6 +257,26 @@ void: WS   <- <space>;
 
 return
 if {0} {
+
+    nx::Class create Machine {
+    :property start:object,type=State
+    :property states:object,type=State,1..*
+  }
+  
+  nx::Class create State {
+    :property machine:object,type=Machine; # / states
+    :property name:alnum,required
+    :property out:object,type=Transition,0..*
+    :property in:object,type=Transition,0..*
+  }
+  
+  nx::Class create Transition {
+    :property event:alnum
+    :property from:object,State; # / out
+    :property to:object,State; # / in
+  }
+  
+
 
       set myELangBuilder [$(builderGen) bgen rules \
                             -name MyELang \

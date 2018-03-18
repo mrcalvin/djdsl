@@ -1280,6 +1280,147 @@ apply {{version code {test ""}} {
   # == Doctests
   #
 
+  # An examplary domain model (as an NX class model). This is a
+  # variant of Fowler's state machine:
+
+  nx::Class create ::StateMachine {
+    :property -accessor public start:alnum; #object,type=StateMachine::State
+    :property -accessor public states:object,type=State,1..*
+  }
+  
+  nx::Class create ::State {
+    :property -accessor public name
+    :property -accessor public transitions:object,type=Transition,0..* {
+      :public object method value=isSet {obj prop} {
+        ::nsf::var::exists $obj $prop
+      }
+    }
+  }
+
+  nx::Class create ::Event {
+    :property -accessor public name
+    :property -accessor public code:alnum
+  }
+  
+  nx::Class create ::Transition {
+    :property -accessor public source:object,type=State
+    :property -accessor public target:alnum
+    :property -accessor public trigger:object,type=Event
+  }
+
+  set opeg {
+#// mgc4 //
+      M  <- `StateMachine` START start:<alnum>+ states:S+ ;
+      S  <- `State` STATE name:<alnum>+ transitions:T* ;
+#// end //
+#// mgc3 //
+    T  <- `Transition` trigger:E GO target:<alnum>+ /
+          `Transition` GO target:<alnum>+ trigger:E;
+#// end //
+#// mgc1 //
+      E  <- `Event` ON name:<alnum>+ ;
+      ON <- WS 'on' WS;
+#// end //
+   START <- WS 'start' WS;
+   STATE <- WS 'state' WS;
+      GO <- WS 'go' WS;
+void: WS <- <space>+;}
+
+  #
+  # A ```Grammar``` can be created based on this collection of OPEG
+  # rules.
+  #
+  
+  set grammar [Grammar from rules $opeg -name MissGrants -start M]
+
+  #
+  # From this ```Grammar``` instance, a parser is generated.
+  #
+  
+  set builder [$grammar new]
+
+  #
+  # This parser is capable of processing (translating) input in the
+  # defined concrete syntax into an instantiation of the language
+  # model, without further action by the DSL developer:
+  #
+  
+  set input {
+#// mgc0 //
+    start idle
+    
+    state idle
+    	on doorClosed go active
+    
+    state active
+        on lightOn go waitingForDrawer
+        on drawerOpened go waitingForLight
+
+    state waitingForDrawer
+        on drawerOpened go unlockedPanel
+
+    state unlockedPanel
+        go idle on panelClosed
+
+    state waitingForLight
+#// end //
+  }
+
+  regsub -all -line {^\s*#//.*//\s*$} $input {} input
+  
+  set stateMachine [$builder parse $input]
+
+  # Once can now navigate and further process the language-model
+  # instantiation:
+  
+  ? {$stateMachine info class} ::StateMachine
+  ? {$stateMachine start get} "idle"
+  ? {llength [$stateMachine states get]} 5
+
+  #
+  # === Some Highlights
+  #
+  # Instantiation and assignment generators can be located in
+  # different rules, to structure the syntax definition in a
+  # convenient or necessary manner, or to make assignment generators
+  # applicable for the scope of more than just one assignment operator.
+
+  set opeg {
+  #// mgc5 //
+      M  <- `StateMachine` START start:<alnum>+ states:S states:S* ;
+      S  <- `State` STATE name:<alnum>+ TRANS? ;
+  TRANS  <- transitions:T TRANS*;
+  #// end //
+      T  <- `Transition` trigger:E GO target:<alnum>+ ;
+  #// mgc2 //
+      E  <- `Event` ON NAME ;
+   NAME  <- name:<alnum>+;
+  #// end //
+     ON  <- WS 'on' WS;
+   START <- WS 'start' WS;
+   STATE <- WS 'state' WS;
+      GO <- WS 'go' WS;
+void: WS <- <space>+;}
+
+  set grammar [Grammar from rules $opeg -name MissGrants -start M]
+  set builder [$grammar new]
+  
+  set stateMachine [$builder parse {
+    start idle
+    
+    state idle
+    on doorClosed go active
+
+    state waitingForLight
+  }]
+
+  ? {$stateMachine info class} ::StateMachine
+  ? {$stateMachine start get} "idle"
+  ? {llength [$stateMachine states get]} 2
+  ? {llength [[lindex [$stateMachine states get] 0] transitions get]} 1
+  # ? {llength [[lindex [$stateMachine states get] 1] transitions get]} 
+  ? {[[[lindex [$stateMachine states get] 0] transitions get] trigger get] name get} "doorClosed"
+  
   #
   # An examplary domain model (as an NX class model)
   #
