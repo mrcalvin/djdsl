@@ -11,7 +11,7 @@ namespace eval ::djdsl::opeg::test {
   # namespace import ::djdsl::lm::*
   
   variable SETUP {
-    set (builderGen) [BuilderGenerator new]
+    
   }
 
   
@@ -29,16 +29,22 @@ namespace eval ::djdsl::opeg::test {
       unset -nocomplain k
       unset -nocomplain v
     }
+    foreach g [Grammar info instances -closure] {
+      if {[::nsf::is object $g]} {
+        $g destroy
+      }
+    }
+    unset -nocomplain g
   }
 
   test opeg-0.1 "PG, loading from rules" -setup $SETUP -body {
-    set (eLangGrm) [Grammar from rules {
+    set (eLangGrm) [Grammar new -name ELang -start STAT {
       STAT <- (EXPR ';')+;
       EXPR <- INT;
       INT  <- <digit>+;
       ID   <- <alpha>+;
 void: WS   <- <space>+;
-    } -name ELang -start STAT]
+    }]
 
     lappend () [$(eLangGrm) info has type ::djdsl::opeg::Grammar]
 
@@ -50,14 +56,14 @@ void: WS   <- <space>+;
 
   
   test opeg-0.2 "PG inclusion" -setup $SETUP -body {
-    set (eLangGrm) [Grammar from rules {
+    set (eLangGrm) [Grammar new -name ELang -start STAT {
       STAT <- (EXPR ';')+;
       EXPR <- INT;
       ID   <- <alpha>+;
 void: WS   <- <space>+;
       X    <- Y;
       Y    <- Z;      
-    } -name ELang -start STAT]
+    }]
     
     lappend () [$(eLangGrm) info has type ::djdsl::opeg::Grammar]
 
@@ -65,15 +71,17 @@ void: WS   <- <space>+;
 
     # A second (including, receiving) PG
 
-    set (myELang) [Grammar from rules {
+    set (myELang) [Grammar create MyELang -start STAT -merges $(eLangGrm) {
       EXPR <- INT / ID;
       INT  <- <digit>+;
-    } -name MyELang -start STAT -superclasses $(eLangGrm)]
+    }]
 
     lappend () [$(myELang) info has type ::djdsl::opeg::Grammar]
 
     lappend () [lsort [$(myELang) rules nts]]
 
+    [$(myELang) resulting] clean
+    
     lappend () [lsort [$(myELang) resulting rules nts]]
 
     lappend () [lsort [[$(myELang) resulting] rules nts]]
@@ -86,6 +94,7 @@ void: WS   <- <space>+;
     }]]] parse {1;a;}
 
     lappend () [$(mf) eval {set :counter}]
+ 
     
   } -cleanup $CLEANUP -result [list 1 {EXPR ID STAT WS X Y} 1 {EXPR INT} \
                                    {EXPR ID INT STAT} {EXPR ID INT STAT} \
@@ -95,11 +104,11 @@ void: WS   <- <space>+;
 
     # Example taken from http://kilby.stanford.edu/~rvg/154/handouts/useless.html
     
-    set (myLangGrm) [Grammar from rules {
+    set (myLangGrm) [Grammar new -start S -name MyLang {
       S <- A B / 'a';
       A <- 'a' A;
       B <- 'b';
-    } -start S -name MyLang]
+    }]
 
     set container [::djdsl::opeg::Grammar::Container new -grammar $(myLangGrm)]
 
@@ -124,11 +133,11 @@ void: WS   <- <space>+;
 
     package req pt::peg::op    
     
-    set (myLangGrm) [Grammar from rules {
+    set (myLangGrm) [Grammar new -start S -name MyLang {
       S <- A B / 'a';
       A <- 'a' A;
       B <- 'b';
-    } -start S -name MyLang]
+    }]
 
     set container [::djdsl::opeg::Grammar::Container new -grammar $(myLangGrm)]
 
@@ -148,16 +157,53 @@ void: WS   <- <space>+;
                                    {B S} \
                                    {S} \
                                    {S {t a}}]
+  
+  test opeg-0.5 "Qualify rules" -setup $SETUP -body {
+    
+    set (myLangGrm) [Grammar new -start S -name MyLang {
+      S <- A B / 'a';
+      A <- 'a' A;
+      B <- 'b';
+    }]
 
+    lappend () [$(myLangGrm) rules nts]
+    
+    lappend () [dict keys [$(myLangGrm) qualify [$(myLangGrm) rules get]]]
+
+    # puts >>>[dict values [$(myLangGrm) qualify [$(myLangGrm) rules get]]]
+    
+  } -cleanup $CLEANUP -result [list {A B S} {MyLang::A MyLang::B MyLang::S}]
+
+  test opeg-0.6 "Define grammars + merge" -setup $SETUP -body {
+
+    # G0 (composed grammar)
+    Grammar create ::G0 -start S
+
+    G0 loadRules {
+      S <- A B / 'a';
+      A <- 'a' A;
+      B <- 'b';
+    }
+
+    # G1 (receiving grammar)
+    Grammar create ::G1 -merges G0 -start A {
+      A <- ('a' / 'A') A / D;
+      D <- 'd';
+    }
+
+    # G1' (resulting grammar)
+    lsort [G1 resulting rules nts]
+        
+  } -cleanup $CLEANUP -result "A B D S"
   
   # Rules command/query interface
 
   test opeg-1.1 "Rule(s): rename" -setup $SETUP -body {
-    set (eLangGrm) [Grammar from rules {
+    set (eLangGrm) [Grammar new -name ELang -start STAT {
       STAT <- (EXPR ';')+ ;
       EXPR <- INT;
       INT   <- <digit>+;
-    } -name ELang -start STAT]
+    }]
     
     lappend () [$(eLangGrm) rules nts]
     
@@ -169,32 +215,42 @@ void: WS   <- <space>+;
     # STAT can't recognize a terminal structure without EXPR being
     # useful, so all become dropped!
     
-    lappend () [[$(eLangGrm) resulting] rules nts]; 
+    lappend () [[$(eLangGrm) resulting] rules nts];
+
+    [$(eLangGrm) resulting] clean
+
+    lappend () [[$(eLangGrm) resulting] rules nts];
     
-  } -cleanup $CLEANUP -result [list {EXPR INT STAT} {EXPR STAT TIN} {}] 
+  } -cleanup $CLEANUP -result [list {EXPR INT STAT} {EXPR STAT TIN} {EXPR STAT TIN} {}] 
+
+
 
   test opeg-1.2 "Rule(s): rename for restriction" -setup $SETUP -body {
 
-    set (eLangGrm) [Grammar from rules {
+    set (eLangGrm) [Grammar new -name ELang -start STAT {
       STAT <- (EXPR ';')+;
       EXPR <- INT;
       ID   <- WS* <alpha>+ WS*;
 void: WS   <- <space>;
-    } -name ELang -start STAT]
+    }]
     
     lappend () [lsort [$(eLangGrm) rules nts]]
 
     # A second (including, receiving) PG
     
-    set (myELang) [Grammar from rules {
+    set (myELang) [Grammar new -name MyELang -start STAT -merges $(eLangGrm) {
       EXPR <- INT / ID;
       INT  <- <digit>+;
-    } -name MyELang -start STAT -superclasses $(eLangGrm) {
-      # Transformations applied on resulting definition
-      :rules rename WS _
     }]
+    
 
     lappend () [lsort [$(myELang) rules nts]]
+
+    [$(myELang) resulting] rules rename WS _
+
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) resulting] clean
 
     lappend () [lsort [$(myELang) resulting rules nts]]
     
@@ -207,44 +263,304 @@ void: WS   <- <space>;
 
     lappend () [$(mf) eval {set :counter;}]
     
-  } -cleanup $CLEANUP -result [list {EXPR ID STAT WS} {EXPR INT} {EXPR ID INT STAT} 2]
+  } -cleanup $CLEANUP -result [list {EXPR ID STAT WS} {EXPR INT} {EXPR ID INT STAT _} {EXPR ID INT STAT} 2]
 
-    test opeg-1.2 "Rule(s): rename for restriction" -setup $SETUP -body {
+  test opeg-1.3 "Rule(s): extract w/o rewrite" -setup $SETUP -body {
 
-    set (eLangGrm) [Grammar from rules {
-      STAT <- (EXPR ';')+;
-      EXPR <- INT;
-      ID   <- WS* <alpha>+ WS*;
+    set (eLangGrm) [Grammar new -name ELang -start INT {
+      INT  <- WS* <digit>+ WS*;
 void: WS   <- <space>;
-    } -name ELang -start STAT]
+    }]
     
     lappend () [lsort [$(eLangGrm) rules nts]]
 
     # A second (including, receiving) PG
     
-    set (myELang) [Grammar from rules {
-      EXPR <- INT / ID;
-      INT  <- <digit>+;
-    } -name MyELang -start STAT -superclasses $(eLangGrm) {
+    set (myELang) [Grammar new -name MyELang -start STAT -merges $(eLangGrm) {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+    } {
       # Transformations applied on resulting definition
-      :rules rename WS _
+      INT <== ELang::INT; # extract w/o rewrite
     }]
 
     lappend () [lsort [$(myELang) rules nts]]
 
     lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) resulting] clean
     
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
     [$(myELang) new -factory [set (mf) [ModelFactory new {
       :public object method "input EXPR" {s e args} {
         incr :counter
         return
       }
-    }]]] parse {1;a;}
-
-    lappend () [$(mf) eval {set :counter;}]
+    }]]] parse {1;2;}
     
-  } -cleanup $CLEANUP -result [list {EXPR ID STAT WS} {EXPR INT} {EXPR ID INT STAT} 2] 
+    lappend () [$(mf) eval {set :counter}]
+    
+  } -cleanup $CLEANUP -result [list {INT WS} {EXPR STAT} {EXPR INT STAT WS} {EXPR INT STAT WS} 2]
 
+  test opeg-1.4 "Rule(s): incremental extract w/o rewrite" -setup $SETUP -body {
+
+    set (eLangGrm) [Grammar new -name ELang -start INT {
+      INT  <- WS* <digit>+ WS*;
+void: WS   <- <space>;
+    }]
+    
+    lappend () [lsort [$(eLangGrm) rules nts]]
+
+    # A second (including, receiving) PG
+    
+    set (myELang) [Grammar new -name MyELang -start STAT -merges $(eLangGrm) {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+      INT  <- OCTAL+ ;
+      OCTAL <- '0' [1-7] [0-7] <digit>?;
+    } {
+      # Transformations applied on resulting definition
+      INT <== ELang::INT; # extract w/o rewrite (add as last alternate)
+    }]
+
+    lappend () [lsort [$(myELang) rules nts]]
+
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) resulting] clean
+    
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) new -factory [set (mf) [ModelFactory new {
+      :public object method "input OCTAL" {s e args} {
+        incr :counter
+        return
+      }
+    }]]] parse { 1 ;0377;}
+    
+    lappend () [$(mf) eval {set :counter}]
+    
+  } -cleanup $CLEANUP -result [list {INT WS} {EXPR INT OCTAL STAT} {EXPR INT OCTAL STAT WS} {EXPR INT OCTAL STAT WS} 1] 
+
+  test opeg-1.5 "Rule(s): extract with rewrite (<=>)" -setup $SETUP -body {
+
+    set (eLangGrm) [Grammar new -name ELang -start INT {
+      INT  <- WS* <digit>+ WS*;
+void: WS   <- <space>;
+    }]
+    
+    lappend () [lsort [$(eLangGrm) rules nts]]
+
+    # A second (including, receiving) PG
+    
+    set (myELang) [Grammar new -name MyELang -start STAT -merges $(eLangGrm) {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+    } {
+      # Transformations applied on resulting definition
+      INT <=> ELang::INT ; # extract plus rewrite
+    }]
+
+    lappend () [lsort [$(myELang) rules nts]]
+
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) resulting] clean
+    
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) new -factory [set (mf) [ModelFactory new {
+      :public object method "input EXPR" {s e args} {
+        incr :counter
+        return
+      }
+    }]]] parse {1;2;}
+    
+    lappend () [$(mf) eval {set :counter}]
+    
+  } -cleanup $CLEANUP -result [list {INT WS} {EXPR STAT} {EXPR INT STAT} {EXPR INT STAT} 2]
+
+  
+  test opeg-1.6 "Rule(s): incremental extract with rewrite (<=>)" -setup $SETUP -body {
+    
+    set (eLangGrm) [Grammar new -name ELang -start INT {
+      INT  <- D+;
+    }]
+    
+    lappend () [lsort [$(eLangGrm) rules nts]]
+    
+    # A second (including, receiving) PG
+    
+    set (myELang) [Grammar new -name MyELang -start STAT -merges $(eLangGrm) {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+      INT  <- OCTAL+ ;
+      D    <- <digit>;
+      OCTAL <- '0' [1-7] [0-7] <digit>?;
+    } {
+      # Transformations applied on resulting definition
+      INT <=> ELang::INT end; # extract plus rewrite (add as last alternate)
+    }]
+
+    lappend () [lsort [$(myELang) rules nts]]
+
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) resulting] clean
+    
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) new -factory [set (mf) [ModelFactory new {
+      :public object method "input OCTAL" {s e args} {
+        dict incr :counter octal
+        return
+      }
+      :public object method "input INT" {s e args} {
+        dict incr :counter int
+        return
+      }
+    }]]] parse {0377;1;}
+    
+    lappend () [$(mf) eval {set :counter}]
+    
+  } -cleanup $CLEANUP -result [list INT {D EXPR INT OCTAL STAT} \
+                                   {D EXPR INT OCTAL STAT} \
+                                   {D EXPR INT OCTAL STAT} \
+                                   {octal 1 int 2}]
+
+   test opeg-1.7 "Rule(s): delete (==>)" -setup $SETUP -body {
+    
+    set (eLangGrm) [Grammar new -name ELang -start INT {
+      INT  <- D+;
+    }]
+    
+    lappend () [lsort [$(eLangGrm) rules nts]]
+    
+    # A second (including, receiving) PG
+    
+    set (myELang) [Grammar new -name MyELang -start STAT -merges $(eLangGrm)  {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+      INT  <- OCTAL+ / D+ ;
+      D    <- <digit>;
+      OCTAL <- '0' [1-7] [0-7] <digit>?;
+    } {
+      # Transformations applied on resulting definition
+      D ==>; # remove rule with NT D
+    }]
+
+    lappend () [lsort [$(myELang) rules nts]]
+
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) resulting] clean
+    
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) new -factory [set (mf) [ModelFactory new {
+      :public object method "input OCTAL" {s e args} {
+        dict incr :counter octal
+        return
+      }
+      :public object method "input INT" {s e args} {
+        dict incr :counter int
+        return
+      }
+    }]]] parse {0377;017;}
+    
+    lappend () [$(mf) eval {set :counter}]
+    
+  } -cleanup $CLEANUP -result [list INT {D EXPR INT OCTAL STAT} {EXPR INT OCTAL STAT} {EXPR INT OCTAL STAT} {octal 2 int 2}]
+
+  test opeg-1.8 "Rule(s): positional delete (==>)" -setup $SETUP -body {
+    
+    set (eLangGrm) [Grammar new -name ELang -start INT {
+      INT  <- D+;
+    }]
+    
+    lappend () [lsort [$(eLangGrm) rules nts]]
+    
+    # A second (including, receiving) PG
+    
+    set (myELang) [Grammar new  -name MyELang -start STAT -merges $(eLangGrm) {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+      INT  <- OCTAL+ / D+ ;
+      D    <- <digit>;
+      OCTAL <- '0' [1-7] [0-7] <digit>?;
+    } {
+      # Transformations applied on resulting definition
+      {INT end} ==>; # remove last alternate of rule for NT INT.
+    }]
+
+    lappend () [lsort [$(myELang) rules nts]]
+
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) resulting] clean
+    
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) new -factory [set (mf) [ModelFactory new {
+      :public object method "input OCTAL" {s e args} {
+        dict incr :counter octal
+        return
+      }
+      :public object method "input INT" {s e args} {
+        dict incr :counter int
+        return
+      }
+    }]]] parse {0377;017;}
+    
+    lappend () [$(mf) eval {set :counter}]
+    
+  } -cleanup $CLEANUP -result [list INT {D EXPR INT OCTAL STAT} {EXPR INT OCTAL STAT} {EXPR INT OCTAL STAT} {octal 2 int 2}]
+
+  test opeg-1.9 "Rule(s): extract with cascade/rewrite (<*>)" -setup $SETUP -body {
+    
+    set (eLangGrm) [Grammar new -name ELang -start INT {
+      INT  <- D+;
+      D    <- <digit>;
+    }]
+    
+    lappend () [lsort [$(eLangGrm) rules nts]]
+    
+    # A second (including, receiving) PG
+    
+    set (myELang) [Grammar new -name MyELang -start STAT -superclasses $(eLangGrm) {
+      STAT <- (EXPR ';')+;
+      EXPR <- INT;
+      INT  <- OCTAL+ ;
+      OCTAL <- '0' [1-7] [0-7] <digit>?;
+    } {
+      # Transformations applied on resulting definition
+      INT <*> ELang::INT; # extract plus rewrite (add as last alternate)
+    }]
+
+    lappend () [lsort [$(myELang) rules nts]]
+
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) resulting] clean
+    
+    lappend () [lsort [$(myELang) resulting rules nts]]
+
+    [$(myELang) new -factory [set (mf) [ModelFactory new {
+      :public object method "input OCTAL" {s e args} {
+        dict incr :counter octal
+        return
+      }
+      :public object method "input INT" {s e args} {
+        dict incr :counter int
+        return
+      }
+    }]]] parse {0377;1;}
+    
+    lappend () [$(mf) eval {set :counter}]
+    
+  } -cleanup $CLEANUP -result [list {D INT} {EXPR INT OCTAL STAT} {D EXPR INT OCTAL STAT} {D EXPR INT OCTAL STAT} {octal 1 int 2}]
+  
   # TODO: ... Why does [$container reachable] contain 'n'?
   #       ... Can superfluous epsilons in sequences be eliminated? flattens? in:
   #        ... {x epsilon {+ alpha} epsilon}
@@ -253,6 +569,9 @@ void: WS   <- <space>;
   #       determined anymore based on its RHS. This may change
   #       transformations, whether relevant details are encoded at the caller's
   #       site (calling RHS) or at the callee's side (called RHS).
+  #       ... RULE COMPOSITION: What about attributes (leaf, value, void) under combination?
+  #       ... check again whether ? and * should really be marked as realizable, widening or restricting?
+  #       ... get rid of epsilons in cleaned choices {is {/ {+ {n OCTAL}} epsilon}}
 }
 
 return

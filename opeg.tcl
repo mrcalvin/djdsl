@@ -184,6 +184,55 @@ apply {{version code {test ""}} {
 
   nx::Class create Grammar -superclasses Rewriter {
 
+    :property -accessor public {name:substdefault "[namespace tail [self]]"}
+    :property -accessor public start:required; # ,alnum
+
+    :object variable -accessor public parser:object [Parser new]
+
+    :property -accessor public {merges:class,0..*,substdefault "[list]"}
+
+    :protected method __object_configureparameter {} {
+      set spec [next]
+      lreplace $spec[set spec {}] end end setRules:alias,optional setTransforms:alias,optional
+    }
+
+    ::nsf::parameter::cache::classinvalidate [current]
+
+
+    :public method clear {} {
+      if {[info exists :rules]} {
+        dict remove ${:rules} {*}[dict keys ${:rules}]
+      }
+      dict set :rules ${:start} [pt::pe epsilon]
+      return
+    }
+
+    
+    :protected method setTransforms {script} {
+      set :transforms $script
+    }
+
+    :protected method setRules {rules} {
+      set tmpl {OPEG @name@ (@start@)
+        @rules@
+        END;}
+      set mappings [list @name@ ${:name} @start@ ${:start} @rules@ $rules]
+      set opegScript [string map \
+                          $mappings \
+                          $tmpl]
+      set opegAst [[[current class] parser get] parset $opegScript]
+      :load $opegAst $opegScript
+      return
+      
+    }
+
+    :public method loadRules {script} {
+      :clear
+      :setRules $script
+      return
+    }
+    
+
     nx::Class create [self]::ParserClass -superclasses nx::Class {
       :property -accessor public generator
       :property -accessor public factory
@@ -207,8 +256,8 @@ apply {{version code {test ""}} {
 
       :public method start {pe:optional} {
         if {[info exists pe]} {
-          set pe {[llength $pe] > 1 ? [lindex $pe 1] : $pe}
-          ${:grammar} start set 
+          set pe [expr {[llength $pe] > 1 ? [lindex $pe 1] : $pe}]
+          ${:grammar} start set $pe
         } else {
           list n [${:grammar} start get]
         }
@@ -248,22 +297,44 @@ apply {{version code {test ""}} {
 
       
     };# Container
+   
 
-    :protected method __object_configureparameter {} {
-      set spec [next]
-      lreplace $spec[set spec {}] end end transforms:alias,optional
-    }
-    ::nsf::parameter::cache::classinvalidate [current]
-    :protected method transforms {script} {
-      set :transforms $script
-    }
-    
-    
-    :object variable parser:object [Parser new]
-
-    :property name
-    :property -accessor public start
     :property -accessor public modes
+
+    :public method qualify {rules} {
+      set all [lsort -unique [concat {*}[dict keys $rules] {*}${:accessed}]]
+      # puts QUALIFY=$all
+      foreach nt $all {
+        set qNt ${:name}::${nt}
+
+        dict for {lhs rhs} $rules {
+          if {$lhs eq $nt} {
+            dict unset rules $lhs
+            set lhs $qNt
+          }
+          dict set rules $lhs [pt::pe::op rename $nt $qNt $rhs]
+        }
+      }
+      return $rules
+    }
+
+    :public method unqualify {rules nts} {
+
+      set nts [concat {*}[lmap nt $nts {list $nt [namespace tail $nt]}]]
+      # puts nts=$nts
+      foreach {qNt nt} $nts {
+        dict for {lhs rhs} $rules {
+          if {$lhs eq $qNt} {
+            dict unset rules $lhs
+            set lhs $nt
+          }
+          dict set rules $lhs [pt::pe::op rename $qNt $nt $rhs]
+        }
+      }
+      
+      return $rules
+    }
+
 
     :property -accessor public -incremental rules {
       :public object method value=set {obj prop value} {        
@@ -283,6 +354,20 @@ apply {{version code {test ""}} {
           return [expr {$isDictSet && [dict exists [$obj $prop get] $nt]}]
         }
       }
+
+      #
+      # get fully qualified rule set
+      #
+
+      :public object method value=fqn {obj prop nt:optional} {
+        set rules [next [list $obj $prop]]
+        if {[info exists nt]} {
+          dict filter $rules key $nt
+        } else {
+          return $rules
+        }
+      }
+
       
       :public object method value=get {obj prop nt:optional} {
         set rules [next [list $obj $prop]]
@@ -323,10 +408,11 @@ apply {{version code {test ""}} {
     }
 
     :method init {} {
-      set supers [:cget -superclasses]
+      set supers [::nsf::relation::get [self] superclass]
       if {$supers eq "::nx::Object"} {
-        :configure -superclasses [linsert $supers[set supers {}] end-1 \
-                                      [current class]::ParserClass]
+        set supers [linsert $supers[set supers {}] end-1 \
+                        {*}${:merges} [current class]::ParserClass]
+        ::nsf::relation::set [self] superclass $supers
       }
     }
 
@@ -342,7 +428,7 @@ apply {{version code {test ""}} {
       return $g
     }
 
-    :public object method "from rules" {rules -name -start args} {
+    :public object method "from rules" {rules -name:required -start args} {
 
       set tmpl {OPEG @name@ (@start@)
         @rules@
@@ -353,7 +439,7 @@ apply {{version code {test ""}} {
                           $mappings \
                           $tmpl]
       
-      return [:from script $opegScript {*}$args]
+      return [:from script $opegScript -name $name {*}$args]
 
     }
 
@@ -387,67 +473,177 @@ apply {{version code {test ""}} {
       
       ## strip down to just the core script fragment
       pt::peg::to::tclparam configure -template {@code@}
-        
-      set body [pt::peg::to::tclparam convert [:resulting asPEG]]
+
+      set resulting [:resulting]
+      $resulting clean
+      set body [pt::peg::to::tclparam convert [$resulting asPEG]]
       # puts body=$body
       $cls eval $body
 
       return [$cls new]
     }
 
+    :public method clean {} {
+      set container [::djdsl::opeg::Grammar::Container new -grammar [self]]
+      ::pt::peg::op flatten $container
+      # puts RULES1=[:rules get]
+      # puts REALIZABLE=[::pt::peg::op realizable $container]
+      #puts REACHABLE=[::pt::peg::op reachable $container]
+      ::pt::peg::op drop unrealizable $container
+      # puts RULES2=[:rules get]
+      ::pt::peg::op drop unreachable $container
+      #puts RULES3=[:rules get]
+      
+      ::pt::peg::op flatten $container
 
+      set nts [::pt::peg::op reachable $container]
+      $container destroy
+      return $nts
+    }
+
+        #     if {0} {
+        #   # check for orphans
+        #   set container [::djdsl::opeg::Grammar::Container new -grammar $o -all $all]
+        #   set inReach [::pt::peg::op reachable $container]
+        #   set defined [$container nonterminals]
+        #   puts ALL=$all=VS=DEFINED=$defined
+          
+        #   set orhpans [list]
+        #   foreach reach $inReach {
+        #     if {$reach ni $defined} {
+        #       lappend orphans $reach
+        #     }
+        #   }
+          
+        #   puts ORPHANS=$orphans
+          
+        #   if {0 && [llength $orphans]} {
+        #     foreach symbol [$container nonterminals] {
+        #       $container rule $symbol \
+        #           [pt::pe::op drop $orphans \
+        #                [$container rule $symbol]]
+        #     }
+        #   }
+        # }
+
+
+    :public method transform {opnd1 op args} {
+      :TRANSFORM $op {*}$opnd1 {*}$args
+    }
+    
     :public method resulting {args} {
       set o [current]::resulting
       if {![::nsf::object::exists $o]} {
+        set uqStart ${:start}
         lassign [:getResulting] rules start modes all
-        [current class] create $o
+        [current class] create $o -name ${:name} -start $start
+        # puts START=$uqStart,$start,${:start}
+        # $o name set ${:name}
 
+        # puts RESULTING=$rules
         $o rules set $rules
-        $o start set $start
+        # $o start set $start; # puts START=$start
         $o modes set $modes
 
         if {[info exists :transforms]} {
-          $o eval ${:transforms}
-        }
-
-        # check for orphans
-        set container [::djdsl::opeg::Grammar::Container new -grammar $o -all $all]
-        set inReach [::pt::peg::op reachable $container]
-        set defined [$container nonterminals]
-        puts ALL=$all=VS=DEFINED=$defined
-
-        set orhpans [list]
-        foreach reach $inReach {
-          if {$reach ni $defined} {
-            lappend orphans $reach
+          if {[info commands [self]::tinterp] eq ""} {
+            interp create -safe [self]::tinterp
+            [self]::tinterp eval {namespace delete ::}
           }
+
+          interp alias [self]::tinterp ::unknown {} $o transform
+
+          # TODO inject transforms API only for this scope
+          # $o eval ${:transforms}
+          [self]::tinterp eval ${:transforms}
+
+          set nts [$o clean]
+          # puts NTS=$nts
+          set r [$o unqualify [$o rules get] $nts]
+          $o eval [list set :rules $r]; # TODO unqualify
+          $o eval [list set :start $uqStart]
         }
-        
-        puts ORPHANS=$orphans
-
-
-        if {0 && [llength $orphans]} {
-          foreach symbol [$container nonterminals] {
-            $container rule $symbol \
-                [pt::pe::op drop $orphans \
-                     [$container rule $symbol]]
-          }
-        }
-        ::pt::peg::op flatten $container
-        puts RULES=[$o rules get]
-        puts REALIZABLE=[::pt::peg::op realizable $container]
-        puts REACHABLE=[::pt::peg::op reachable $container]
-        ::pt::peg::op drop unrealizable $container
-        puts =============
-        puts RULES=[$o rules get]
-        ::pt::peg::op drop unreachable $container
-        puts RULES=[$o rules get]
-        
-        ::pt::peg::op flatten $container
-
-        $container destroy
       }
       $o {*}$args
+    }
+
+    #
+    # TRANSFORMS
+    #
+
+    :public forward "TRANSFORM <*>" %self import -rewrite -cascade
+    
+    :public forward "TRANSFORM <=>" %self import -rewrite
+
+    :public forward "TRANSFORM <==" %self import 
+    
+    :public method import {-rewrite:switch -cascade:switch tgt src {position end}} {
+
+      set qTgt ${:name}::$tgt
+      if {![dict exists ${:rules} $src]} {
+        throw [list DJDSL OPEG TRANSFORM NX $src] "The source non-terminal '$src' does not exist."
+      }
+      
+      set rhs [dict get ${:rules} $src]
+
+      if {$rewrite} {
+        set called [pt::pe::op called $rhs]
+        foreach c $called {
+          set qNt ${:name}::[namespace tail $c]
+          set rhs [pt::pe::op rename $c $qNt $rhs]
+
+          if {$cascade && $c ne $src} {
+            :import -rewrite -cascade [namespace tail $c] $c
+          }
+        }
+      }
+      
+      if {![dict exists ${:rules} $qTgt]} {
+        # new rule, set RHS
+        set new $rhs
+      } else {
+        # existing rule, add to RHS according to position
+        set existing [dict get ${:rules} $qTgt]
+        lassign $existing op
+        if {$op eq "/"} {
+          set pos [expr {[string is integer -strict $position]? 1+$position : $position}]
+          set new [linsert $existing[set existing {}] $pos $rhs]
+        } else {
+          if {$position eq "end"} {
+            set new [pt::pe choice $existing $rhs]
+          } else {
+            set new [pt::pe choice $rhs $existing]
+          }
+        }
+      }
+      dict set :rules $qTgt $new
+      # puts IMPORT=${:rules}
+      return
+    }
+
+    :public method "TRANSFORM ==>" {src position:optional} {
+      set qSrc ${:name}::$src
+      if {![dict exists ${:rules} $qSrc]} {
+        throw [list DJDSL OPEG TRANSFORM NX $src] "The source non-terminal '$src' does not exist."
+      }
+
+      if {[info exists position]} {
+        set rhs [dict get ${:rules} $qSrc]
+        lassign $rhs op
+        if {$op eq "/"} {
+          if {[llength $rhs] > 1} {
+            set pos [expr {[string is integer -strict $position]? 1+$position : "end"}]
+            set rhs [lreplace $rhs $pos $pos]
+            dict set :rules $qSrc $rhs
+          } else {
+            dict unset :rules $qSrc
+          }
+        }
+      } else {
+        dict unset :rules $qSrc
+      }
+      
+      return
     }
     
     :public method asPEG {} {
@@ -456,7 +652,7 @@ apply {{version code {test ""}} {
       dict for {nt rhs} ${:rules} {
         dict set rules $nt [list is $rhs mode [dict get ${:modes} $nt]]
       }
-      set peg [list pt::grammar::peg [list rules $rules start ${:start}]]
+      set peg [list pt::grammar::peg [list rules $rules start [list n ${:start}]]]
       # puts peg=$peg
       pt::peg verify-as-canonical $peg
       return $peg
@@ -513,22 +709,35 @@ apply {{version code {test ""}} {
       set accessed [dict create]
       set terminals [dict create]
       set modes [dict create]
+
+
+      # puts includes=([self])=$includes
       foreach extra $includes {
         if {![$extra info has type [current class]]} continue;
-        set rules [dict merge $rules [$extra rules get]]
+        set extraRules [$extra rules get]
+        if {[info exists :transforms]} {
+          set extraRules [$extra qualify $extraRules]
+        }
+        set rules [dict merge $rules $extraRules]
+        if {[$extra eval {info exists :terminals}]} {
+          set terminals [dict merge $terminals [$extra eval {set :terminals}]]
+        }
         set accessed [dict merge $accessed [$extra eval {set :accessed}]]
-        set terminals [dict merge $terminals [$extra eval {set :terminals}]]
         set modes [dict merge $modes [$extra eval {set :modes}]]
       }
-      
 
-      # puts rules=$rules
+      #puts rules=$rules
       # puts accessed=$accessed
       # puts terminals=$terminals
       # puts MERGE:modes=$modes
 
       # set rules [:getUseful $rules $accessed $terminals]
-      return [list $rules [list n ${:start}] $modes [lsort -unique [concat {*}$accessed]]]
+      set s ${:start}
+      if {[info exists :transforms]} {
+        set s ${:name}::$s
+      }
+      
+      return [list $rules $s $modes [lsort -unique [concat {*}$accessed]]]
       
     }
 
@@ -1131,7 +1340,7 @@ apply {{version code {test ""}} {
         set later [list]
         set changed 0
         foreach cmd $cmds {
-          try $cmd on error {e} {lappend later $cmd} on ok {} {set changed 1}
+          try $cmd on error {e} {puts $e; lappend later $cmd} on ok {} {set changed 1}
         }
         set cmds $later
       }
@@ -1147,6 +1356,7 @@ apply {{version code {test ""}} {
 
       set ast [:parset $script]
 
+      # puts ast=$ast
       set list {}
       set factory [[:info class] factory get]
       $factory eval [list set :sourcecode $script]
@@ -1420,6 +1630,55 @@ void: WS <- <space>+;}
   ? {llength [[lindex [$stateMachine states get] 0] transitions get]} 1
   # ? {llength [[lindex [$stateMachine states get] 1] transitions get]} 
   ? {[[[lindex [$stateMachine states get] 0] transitions get] trigger get] name get} "doorClosed"
+
+
+  StateMachine property -accessor public start:object,type=State
+  StateMachine property -accessor public states:object,type=State,1..* {
+    :public object method value=set {obj prop value} {
+      foreach s $value {
+        $obj eval [list dict set :$prop [$s name get] $s]
+      }
+      
+    }
+    :public object method value=get {obj prop stateName} {
+      set states [next [list $obj $prop]]
+      dict get $states $stateName
+    }
+  }
+
+  set opeg {
+  #// mgc7 //
+       M <- `StateMachine` START start:(`$root states $0` <alnum>+)
+            states:S+ ;
+  #// end //
+       S <- `State` STATE name:<alnum>+ TRANS? ;
+   TRANS <- transitions:T TRANS*;
+       T <- `Transition` trigger:E GO target:<alnum>+ ;
+       E <- `Event` ON NAME ;
+    NAME <- name:<alnum>+;
+      ON <- WS 'on' WS;
+   START <- WS 'start' WS;
+   STATE <- WS 'state' WS;
+      GO <- WS 'go' WS;
+void: WS <- <space>+;}
+
+  set grammar [Grammar from rules $opeg -name MissGrants -start M]
+  set builder [$grammar new]
+
+  set input {
+  #// mgc6 //  
+    start idle
+    state idle
+  #// end //
+  }
+
+  regsub -all -line {^\s*#//.*//\s*$} $input {} input
+
+  set stateMachine [$builder parse $input]
+
+  ? {$stateMachine info class} ::StateMachine
+  ? {[$stateMachine start get] info class} ::State
+  ? {[$stateMachine start get] name get} "idle"
   
   #
   # An examplary domain model (as an NX class model)
