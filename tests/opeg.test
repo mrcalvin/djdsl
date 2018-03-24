@@ -176,6 +176,7 @@ void: WS   <- <space>+;
 
   test opeg-0.6 "Define grammars + merge" -setup $SETUP -body {
 
+    #// merge1 //
     # G0 (composed grammar)
     Grammar create ::G0 -start S
 
@@ -192,10 +193,65 @@ void: WS   <- <space>+;
     }
 
     # G1' (resulting grammar)
-    lsort [G1 resulting rules nts]
+    G1 resulting rules nts
+    #// end //
         
-  } -cleanup $CLEANUP -result "A B D S"
-  
+  } -cleanup $CLEANUP -result "A D"
+
+  test opeg-0.7 "Define grammars + merge + transforms" -setup $SETUP -body {
+
+    # G0 (composed grammar)
+    Grammar create ::G0 -start S
+
+    G0 loadRules {
+      S <- A B / 'a';
+      A <- 'a' A;
+      B <- 'b';
+    }
+
+    #// merge2 //
+    # G1 (receiving grammar)
+    Grammar create ::G1 -merges G0 -start A {
+      A <- ('a' / 'A') A / D;
+      D <- 'd';
+    } {
+      # transformations
+      G0::B ==> ; # rule deletion
+    }
+    #// end //
+
+    # G1' (resulting grammar)
+    lappend () [G1 resulting rules nts]
+
+    G1 loadTransforms {
+      # transformations, reloaded
+      D ==> ; # rule deletion
+    }
+
+    # G1' (resulting grammar), reloaded
+    lappend () [G1 resulting rules nts]
+
+    G1 loadTransforms {
+      # transformations, reloaded
+      G0::S ==> ; # rule deletion
+    }
+
+    # G1' (resulting grammar), reloaded
+    lappend () [G1 resulting rules nts]
+
+    #// merge3 //
+    G1 loadTransforms {
+      # transformations, reloaded
+      G0::B ==> ; # rule deletion
+    }
+    #// end //
+
+    # G1' (resulting grammar), reloaded
+    lappend () [G1 resulting rules nts]
+
+        
+  } -cleanup $CLEANUP -result [list {D A} "" {D A} {D A}]
+
   # Rules command/query interface
 
   test opeg-1.1 "Rule(s): rename" -setup $SETUP -body {
@@ -221,7 +277,7 @@ void: WS   <- <space>+;
 
     lappend () [[$(eLangGrm) resulting] rules nts];
     
-  } -cleanup $CLEANUP -result [list {EXPR INT STAT} {EXPR STAT TIN} {EXPR STAT TIN} {}] 
+  } -cleanup $CLEANUP -result [list {EXPR INT STAT} {EXPR STAT TIN} {} {}] 
 
 
 
@@ -560,6 +616,38 @@ void: WS   <- <space>;
     lappend () [$(mf) eval {set :counter}]
     
   } -cleanup $CLEANUP -result [list {D INT} {EXPR INT OCTAL STAT} {D EXPR INT OCTAL STAT} {D EXPR INT OCTAL STAT} {octal 1 int 2}]
+
+  test opeg-2.1 "Define object grammars + merge" -setup $SETUP -body {
+
+    # G0 (composed grammar)
+    Grammar create ::G0 -start S
+
+    G0 loadRules {
+      S <- `ABClass` a:A b:B / 'a';
+      A <- 'a' A;
+      B <- 'b';
+    }
+
+    # G1 (receiving grammar)
+    Grammar create ::G1 -merges G0 -start A {
+      A <- ('a' / 'A') A / `DClass` d:D;
+      D <- 'd';
+    }
+
+    # G1' (resulting grammar)
+    lappend () [G1 resulting rules nts]
+
+    # puts [G1 resulting rules get]
+
+    set (helper) [nx::Class create ::DClass {
+      :property d
+    }]
+    
+    set p [[G1 resulting] new]
+    lappend () [[$p parse d] info class]
+        
+  } -cleanup $CLEANUP -result [list "A _FIELD_0_d D" ::DClass]
+
   
   # TODO: ... Why does [$container reachable] contain 'n'?
   #       ... Can superfluous epsilons in sequences be eliminated? flattens? in:
@@ -572,6 +660,7 @@ void: WS   <- <space>;
   #       ... RULE COMPOSITION: What about attributes (leaf, value, void) under combination?
   #       ... check again whether ? and * should really be marked as realizable, widening or restricting?
   #       ... get rid of epsilons in cleaned choices {is {/ {+ {n OCTAL}} epsilon}}
+  #       ... hide _FIELD_* NTs from introspective output?
 }
 
 return

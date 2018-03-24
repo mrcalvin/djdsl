@@ -189,7 +189,13 @@ apply {{version code {test ""}} {
 
     :object variable -accessor public parser:object [Parser new]
 
-    :property -accessor public {merges:class,0..*,substdefault "[list]"}
+    :property -accessor public {merges:class,0..*,substdefault "[list]"} {
+      :public object method value=set {obj prop value} {
+        set m [next]
+        $obj eval {:resetResulting}
+        return $m
+      }
+    }
 
     :protected method __object_configureparameter {} {
       set spec [next]
@@ -200,16 +206,25 @@ apply {{version code {test ""}} {
 
 
     :public method clear {} {
-      if {[info exists :rules]} {
-        dict remove ${:rules} {*}[dict keys ${:rules}]
-      }
+      unset -nocomplain :rules
       dict set :rules ${:start} [pt::pe epsilon]
+      :resetResulting
       return
     }
 
+    :protected method resetResulting {} {
+      if {[::nsf::is object [self]::resulting]} {
+        [self]::resulting destroy
+      }
+    }
     
     :protected method setTransforms {script} {
       set :transforms $script
+    }
+
+    :public method loadTransforms {script} {
+      :resetResulting
+      :setTransforms $script
     }
 
     :protected method setRules {rules} {
@@ -290,11 +305,17 @@ apply {{version code {test ""}} {
 
       :public method remove {args} {
         foreach nt $args {
+          dict set :removed $nt _
           ${:grammar} rules delete $nt
         }
-
       }
 
+      :public method getRemoved {} {
+        if {[info exists :removed]} {
+          return [dict keys ${:removed}]
+        }
+        return
+      }
       
     };# Container
    
@@ -486,17 +507,25 @@ apply {{version code {test ""}} {
     :public method clean {} {
       set container [::djdsl::opeg::Grammar::Container new -grammar [self]]
       ::pt::peg::op flatten $container
-      # puts RULES1=[:rules get]
-      # puts REALIZABLE=[::pt::peg::op realizable $container]
-      #puts REACHABLE=[::pt::peg::op reachable $container]
+      puts RULES1=[:rules get]
+      puts REALIZABLE=[::pt::peg::op realizable $container]
+      puts REACHABLE=[::pt::peg::op reachable $container]
       ::pt::peg::op drop unrealizable $container
-      # puts RULES2=[:rules get]
+      puts RULES2=[:rules get]
       ::pt::peg::op drop unreachable $container
-      #puts RULES3=[:rules get]
+      puts RULES3=[:rules get]
       
       ::pt::peg::op flatten $container
 
       set nts [::pt::peg::op reachable $container]
+      
+      set removed [$container getRemoved]
+      # puts removed=$removed
+      if {[llength $removed]} {
+        set :specs [dict remove ${:specs} {*}$removed]
+      }
+
+      # puts SPECS=${:specs}
       $container destroy
       return $nts
     }
@@ -535,15 +564,16 @@ apply {{version code {test ""}} {
       set o [current]::resulting
       if {![::nsf::object::exists $o]} {
         set uqStart ${:start}
-        lassign [:getResulting] rules start modes all
+        lassign [:getResulting] rules start modes all specs
         [current class] create $o -name ${:name} -start $start
         # puts START=$uqStart,$start,${:start}
         # $o name set ${:name}
 
-        # puts RESULTING=$rules
+        puts RESULTING=$rules
         $o rules set $rules
         # $o start set $start; # puts START=$start
         $o modes set $modes
+        $o eval [list set :specs $specs]
 
         if {[info exists :transforms]} {
           if {[info commands [self]::tinterp] eq ""} {
@@ -553,15 +583,17 @@ apply {{version code {test ""}} {
 
           interp alias [self]::tinterp ::unknown {} $o transform
 
-          # TODO inject transforms API only for this scope
           # $o eval ${:transforms}
           [self]::tinterp eval ${:transforms}
 
           set nts [$o clean]
           # puts NTS=$nts
           set r [$o unqualify [$o rules get] $nts]
-          $o eval [list set :rules $r]; # TODO unqualify
+          $o eval [list set :rules $r];
           $o eval [list set :start $uqStart]
+        } else {
+          # simple union
+          $o clean
         }
       }
       $o {*}$args
@@ -622,25 +654,28 @@ apply {{version code {test ""}} {
     }
 
     :public method "TRANSFORM ==>" {src position:optional} {
-      set qSrc ${:name}::$src
-      if {![dict exists ${:rules} $qSrc]} {
+      puts TRULES=${:rules}
+      if {[namespace tail $src] eq $src} {
+        set src ${:name}::$src
+      }
+      if {![dict exists ${:rules} $src]} {
         throw [list DJDSL OPEG TRANSFORM NX $src] "The source non-terminal '$src' does not exist."
       }
 
       if {[info exists position]} {
-        set rhs [dict get ${:rules} $qSrc]
+        set rhs [dict get ${:rules} $src]
         lassign $rhs op
         if {$op eq "/"} {
           if {[llength $rhs] > 1} {
             set pos [expr {[string is integer -strict $position]? 1+$position : "end"}]
             set rhs [lreplace $rhs $pos $pos]
-            dict set :rules $qSrc $rhs
+            dict set :rules $src $rhs
           } else {
-            dict unset :rules $qSrc
+            dict unset :rules $src
           }
         }
       } else {
-        dict unset :rules $qSrc
+        dict unset :rules $src
       }
       
       return
@@ -709,6 +744,7 @@ apply {{version code {test ""}} {
       set accessed [dict create]
       set terminals [dict create]
       set modes [dict create]
+      set specs [dict create]
 
 
       # puts includes=([self])=$includes
@@ -722,8 +758,15 @@ apply {{version code {test ""}} {
         if {[$extra eval {info exists :terminals}]} {
           set terminals [dict merge $terminals [$extra eval {set :terminals}]]
         }
-        set accessed [dict merge $accessed [$extra eval {set :accessed}]]
+
+        if {[$extra eval {info exists :accessed}]} {
+          set accessed [dict merge $accessed [$extra eval {set :accessed}]]
+        }
         set modes [dict merge $modes [$extra eval {set :modes}]]
+
+        if {[$extra eval {info exists :specs}]} {
+          set specs [dict merge $specs [$extra eval {set :specs}]]
+        }
       }
 
       #puts rules=$rules
@@ -737,7 +780,7 @@ apply {{version code {test ""}} {
         set s ${:name}::$s
       }
       
-      return [list $rules $s $modes [lsort -unique [concat {*}$accessed]]]
+      return [list $rules $s $modes [lsort -unique [concat {*}$accessed]] $specs]
       
     }
 
@@ -794,7 +837,6 @@ apply {{version code {test ""}} {
       set pegAst [lindex [:rewrite $opegAst $input] 1]
       unset :(defCounter)
       ## add ctors to OPEG structure
-      # puts specs=${:specs}
       if {[info exists :specs]} {
         set :specs [dict map {nt specs} ${:specs} {
           if {![llength [concat {*}$specs]]} {
@@ -804,6 +846,9 @@ apply {{version code {test ""}} {
         }]
       }
 
+      puts =========
+      puts LOADSPEC([self])=${:specs}
+      
       dict for {nt rhs} [dict get $pegAst rules] {
         array set "" $rhs
         dict set :rules $nt $(is)
@@ -1518,7 +1563,12 @@ apply {{version code {test ""}} {
     :property -accessor public trigger:object,type=Event
   }
 
-  set opeg {
+  #
+  # A ```Grammar``` can be created based on this collection of OPEG
+  # rules.
+  #
+  
+  set grammar [Grammar new -name MissGrants -start M {
 #// mgc4 //
       M  <- `StateMachine` START start:<alnum>+ states:S+ ;
       S  <- `State` STATE name:<alnum>+ transitions:T* ;
@@ -1534,20 +1584,14 @@ apply {{version code {test ""}} {
    START <- WS 'start' WS;
    STATE <- WS 'state' WS;
       GO <- WS 'go' WS;
-void: WS <- <space>+;}
-
-  #
-  # A ```Grammar``` can be created based on this collection of OPEG
-  # rules.
-  #
-  
-  set grammar [Grammar from rules $opeg -name MissGrants -start M]
+void: WS <- <space>+;
+  }]
 
   #
   # From this ```Grammar``` instance, a parser is generated.
   #
   
-  set builder [$grammar new]
+  set parser [$grammar new]
 
   #
   # This parser is capable of processing (translating) input in the
@@ -1578,7 +1622,7 @@ void: WS <- <space>+;}
 
   regsub -all -line {^\s*#//.*//\s*$} $input {} input
   
-  set stateMachine [$builder parse $input]
+  set stateMachine [$parser parse $input]
 
   # Once can now navigate and further process the language-model
   # instantiation:
@@ -1612,10 +1656,27 @@ void: WS <- <space>+;}
       GO <- WS 'go' WS;
 void: WS <- <space>+;}
 
-  set grammar [Grammar from rules $opeg -name MissGrants -start M]
-  set builder [$grammar new]
+  set grammar [Grammar new -name MissGrants -start M {
+#// mgc5 //
+      M  <- `StateMachine` START start:<alnum>+ states:S states:S* ;
+      S  <- `State` STATE name:<alnum>+ TRANS? ;
+  TRANS  <- transitions:T TRANS*;
+#// end //
+      T  <- `Transition` trigger:E GO target:<alnum>+ ;
+#// mgc2 //
+      E  <- `Event` ON NAME ;
+      NAME  <- name:<alnum>+;
+#// end //
+     ON  <- WS 'on' WS;
+   START <- WS 'start' WS;
+   STATE <- WS 'state' WS;
+      GO <- WS 'go' WS;
+void: WS <- <space>+;
+    }]
+
+  set parser [$grammar new]
   
-  set stateMachine [$builder parse {
+  set stateMachine [$parser parse {
     start idle
     
     state idle
@@ -1646,11 +1707,11 @@ void: WS <- <space>+;}
     }
   }
 
-  set opeg {
-  #// mgc7 //
+  set grammar [Grammar new -name MissGrants -start M {
+#// mgc7 //
        M <- `StateMachine` START start:(`$root states $0` <alnum>+)
             states:S+ ;
-  #// end //
+#// end //
        S <- `State` STATE name:<alnum>+ TRANS? ;
    TRANS <- transitions:T TRANS*;
        T <- `Transition` trigger:E GO target:<alnum>+ ;
@@ -1660,10 +1721,10 @@ void: WS <- <space>+;}
    START <- WS 'start' WS;
    STATE <- WS 'state' WS;
       GO <- WS 'go' WS;
-void: WS <- <space>+;}
-
-  set grammar [Grammar from rules $opeg -name MissGrants -start M]
-  set builder [$grammar new]
+void: WS <- <space>+;
+     }]
+               
+  set parser [$grammar new]
 
   set input {
   #// mgc6 //  
@@ -1674,7 +1735,7 @@ void: WS <- <space>+;}
 
   regsub -all -line {^\s*#//.*//\s*$} $input {} input
 
-  set stateMachine [$builder parse $input]
+  set stateMachine [$parser parse $input]
 
   ? {$stateMachine info class} ::StateMachine
   ? {[$stateMachine start get] info class} ::State
@@ -1713,8 +1774,8 @@ leaf: Num         <- Sign? Digit+                      			       ;
   # parser + builder for this OPEG.
   #
   
-  set grammar [Grammar from rules $g -name Calculator -start Term]
-  set builder [$grammar new]
+  set grammar [Grammar new -name Calculator -start Term $g]
+  set parser [$grammar new]
 
   #
   # The method ```parse``` can be used to submit input into the
@@ -1722,7 +1783,7 @@ leaf: Num         <- Sign? Digit+                      			       ;
   # instantiation of the language model.
   #
 
-  set rObj [$builder parse {1+2}]
+  set rObj [$parser parse {1+2}]
   
   ? {$rObj info class} ::Binary
   ? {[$rObj lhs get] info class} ::Const
@@ -1732,15 +1793,15 @@ leaf: Num         <- Sign? Digit+                      			       ;
   ? {$rObj cget -op} "+"
 
  
-  set rObj [$builder parse {5}]
+  set rObj [$parser parse {5}]
   ? {$rObj info class} ::Const
   ? {$rObj cget -value} "5"
 
-  set rObj [$builder parse {-0}]
+  set rObj [$parser parse {-0}]
   ? {$rObj info class} ::Const
   ? {$rObj cget -value} "-0"
 
-  set rObj [$builder parse {4-3}]
+  set rObj [$parser parse {4-3}]
 
   ? {$rObj info class} ::Binary
   ? {[$rObj lhs get] info class} ::Const
@@ -1763,8 +1824,8 @@ leaf: Num         <- Sign? Digit+                      			       ;
   # The custom factory is then passed to the ```bgen``` generator
   # method.
   
-  set grammar [Grammar from rules $g -name Calculator -start Term]
-  set builder [$grammar new -factory [CalculatorFactory new]]
+  set grammar [Grammar new -name Calculator -start Term $g]
+  set parser [$grammar new -factory [CalculatorFactory new]]
 
   #
   # Another examplary domain model (as an NX class model)
