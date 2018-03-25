@@ -643,8 +643,8 @@ void: WS   <- <space>;
       :property d
     }]
     
-    set p [[G1 resulting] new]
-    lappend () [[$p parse d] info class]
+    set (p) [[G1 resulting] new]
+    lappend () [[$(p) parse d] info class]
         
   } -cleanup $CLEANUP -result [list "A _FIELD_0_d D" ::DClass]
 
@@ -654,7 +654,7 @@ void: WS   <- <space>;
     Grammar create ::G0 -start S
 
     G0 loadRules {
-      S <- `ABClass` a:A b:B / `A` v:'a';
+      S <- 'x' / `ABClass` a:A b:B / `A` v:'a';
       A <- 'a' A;
       B <- 'b';
     }
@@ -684,6 +684,58 @@ void: WS   <- <space>;
         
   } -cleanup $CLEANUP -result [list {_FIELD_0_v S} ::A "a"]
 
+  test opeg-2.3 "Define object grammars + merge + queries" -setup $SETUP -body {
+     
+    # G0 (composed grammar)
+    Grammar create ::G0 -start S
+
+    G0 loadRules {
+      S <- `A` v:(`$root 1st $0` B / `$root 2nd $0` C) / `ABClass` a:A b:B;
+      A <- 'a' A;
+      B <- 'b';
+      C <- 'c';
+    }
+
+    # G1 (receiving grammar)
+    Grammar create ::G1 -merges G0 -start S {
+      A <- ('a' / 'A') A / `DClass` d:D;
+      D <- 'd';
+    } {
+      S <== G0::S
+      G0::A ==>
+      G0::C ==>
+    }
+
+    # G1' (resulting grammar)
+    lappend () [G1 resulting rules nts]
+
+    # puts [G1 resulting rules get]
+
+    set (helper) [nx::Class create ::A {
+      :property v
+      :public forward 1st %self shout %method
+      :public forward 2nd %self shout %method
+      :public method shout {args} {
+        return $args
+      }
+    }]
+    
+    set (p) [[G1 resulting] new]
+    set (a) [$(p) parse b]
+    lappend () [$(a) info class]
+    lappend () [$(a) cget -v]
+
+    G1 loadTransforms {
+      S <== G0::S
+      G0::A ==>
+    }
+
+    set (p2) [[G1 resulting] new]
+    set (c)  [$(p2) parse c]
+    lappend () [$(c) cget -v]
+        
+  } -cleanup $CLEANUP -result [list {B _FIELD_0_v S} ::A {1st get b} "2nd get c"]
+
   
   # TODO: ... Why does [$container reachable] contain 'n'?
   #       ... Can superfluous epsilons in sequences be eliminated? flattens? in:
@@ -697,6 +749,7 @@ void: WS   <- <space>;
   #       ... check again whether ? and * should really be marked as realizable, widening or restricting?
   #       ... get rid of epsilons in cleaned choices {is {/ {+ {n OCTAL}} epsilon}}
   #       ... hide _FIELD_* NTs from introspective output?
+  #       ... modes under composition, in particular, the qualified ones.
 }
 
 return
