@@ -316,9 +316,83 @@ apply {{version code {test ""}} {
         }
         return
       }
+
+      #
+      # This is a modified clone of the DROP API for unrealisable NTs
+      # as found in pt_peg_op.tcl. For choice expressions, we need to
+      # track the alternates that become dropped. To goal is to update
+      # the generators registered for the corresponding
+      # rule. Otherwise, the generators get out of sync because of a
+      # cleaning operation.
+      #
+
+      :public method drop {dropset serial} {
+        set res [pt::pe bottomup \
+                     [list [self] op Drop $dropset] \
+                     $serial]
+        if {$res eq "@@"} { set res [pt::pe epsilon] }
+        return $res
+      }
+      
+      :public method dropUnrealizable {} {
+        set all [::pt::peg::op reachable [self]]
+        lappend all {} ;
+        
+        set unrealizable \
+            [struct::set difference \
+                 $all [pt::peg::op realizable [self]]]
+        
+        if {![llength $unrealizable]} return
+        
+        if {[struct::set contains $unrealizable {}]} {
+          struct::set exclude unrealizable {}
+          :start epsilon
+        }
+        
+        :remove {*}$unrealizable
+                
+        foreach symbol [:nonterminals] {
+          :rule $symbol \
+              [:drop $unrealizable \
+                   [:rule $symbol]]
+          if {[info exists :droppedAlternates]} {
+            :removeAlternate $symbol ${:droppedAlternates}
+            unset :droppedAlternates
+          }
+        }
+        return
+      }
+      
+      :public method "op Drop" {args} {
+        lassign $args _ _ op children
+        if {$op eq "/"} {
+          set :droppedAlternates [lsearch -all -exact $children @@]
+        }
+        ::pt::pe::op::Drop {*}$args
+      }
+
+      :protected method removeAlternate {nt alternates} {
+        if {[${:grammar} eval {info exists :specs}]} {
+          set specs [${:grammar} eval {set :specs}]
+          if {[dict exists $specs $nt]} {
+            set igens [dict get $specs $nt]
+            foreach a $alternates {
+              set igens [lreplace $igens $a $a]
+            }
+
+            # puts IGENS=$igens
+            if {[llength [concat {*}$igens]]} {
+              dict set specs $nt $igens
+            } else {
+              dict unset specs $nt
+            }
+          }
+          ${:grammar} eval [list set :specs $specs]
+        }
+      }
       
     };# Container
-   
+    
 
     :property -accessor public modes
 
@@ -507,13 +581,23 @@ apply {{version code {test ""}} {
     :public method clean {} {
       set container [::djdsl::opeg::Grammar::Container new -grammar [self]]
       ::pt::peg::op flatten $container
-      puts RULES1=[:rules get]
-      puts REALIZABLE=[::pt::peg::op realizable $container]
-      puts REACHABLE=[::pt::peg::op reachable $container]
-      ::pt::peg::op drop unrealizable $container
-      puts RULES2=[:rules get]
+
+      if {0} {
+        puts ------------------------
+        dict for {k v} [:rules get] {
+          puts "$k <- $v"
+        }
+        puts ------------------------
+        puts REALIZABLE=[::pt::peg::op realizable $container]
+        puts REACHABLE=[::pt::peg::op reachable $container]
+      }
+
+      # ::pt::peg::op drop unrealizable $container
+      $container dropUnrealizable
+      
+      # puts RULES2=[:rules get]
       ::pt::peg::op drop unreachable $container
-      puts RULES3=[:rules get]
+      # puts RULES3=[:rules get]
       
       ::pt::peg::op flatten $container
 
@@ -569,7 +653,6 @@ apply {{version code {test ""}} {
         # puts START=$uqStart,$start,${:start}
         # $o name set ${:name}
 
-        puts RESULTING=$rules
         $o rules set $rules
         # $o start set $start; # puts START=$start
         $o modes set $modes
@@ -588,9 +671,16 @@ apply {{version code {test ""}} {
 
           set nts [$o clean]
           # puts NTS=$nts
+          
           set r [$o unqualify [$o rules get] $nts]
           $o eval [list set :rules $r];
           $o eval [list set :start $uqStart]
+          set specs [$o eval {set :specs}]
+          dict for {k v} $specs {
+            dict set specs [namespace tail $k] $v
+            dict unset spec $k
+          }
+          $o eval [list set :specs $specs]
         } else {
           # simple union
           $o clean
@@ -618,8 +708,8 @@ apply {{version code {test ""}} {
       
       set rhs [dict get ${:rules} $src]
 
+      set called [pt::pe::op called $rhs]
       if {$rewrite} {
-        set called [pt::pe::op called $rhs]
         foreach c $called {
           set qNt ${:name}::[namespace tail $c]
           set rhs [pt::pe::op rename $c $qNt $rhs]
@@ -629,6 +719,18 @@ apply {{version code {test ""}} {
           }
         }
       }
+
+      # else {
+      #   puts CALLED=$called
+      #   set fields [lsearch -glob -inline -all $called *::_FIELD_*]
+      #   puts FIELDS=$fields
+      #   foreach f $fields {
+      #     # :import [namespace tail $f] $f
+      #     foreach c [pt::pe::op called [dict get ${:rules} $f]] {
+      #       # :import [namespace tail $c] $c
+      #     }
+      #   }
+      # }
       
       if {![dict exists ${:rules} $qTgt]} {
         # new rule, set RHS
@@ -650,11 +752,13 @@ apply {{version code {test ""}} {
       }
       dict set :rules $qTgt $new
       # puts IMPORT=${:rules}
+      if {[dict exists ${:specs} $src]} {
+        dict set :specs $qTgt [dict get ${:specs} $src]
+      }
       return
     }
 
     :public method "TRANSFORM ==>" {src position:optional} {
-      puts TRULES=${:rules}
       if {[namespace tail $src] eq $src} {
         set src ${:name}::$src
       }
@@ -765,7 +869,14 @@ apply {{version code {test ""}} {
         set modes [dict merge $modes [$extra eval {set :modes}]]
 
         if {[$extra eval {info exists :specs}]} {
-          set specs [dict merge $specs [$extra eval {set :specs}]]
+          set s [$extra eval {set :specs}]
+          if {[info exists :transforms]} {
+            dict for {k v} $s {
+              dict set s [$extra name get]::$k $v
+              dict unset s $k
+            }
+          }
+          set specs [dict merge $specs $s]
         }
       }
 
@@ -846,8 +957,8 @@ apply {{version code {test ""}} {
         }]
       }
 
-      puts =========
-      puts LOADSPEC([self])=${:specs}
+      # puts =========
+      # puts LOADSPEC([self])=${:specs}
       
       dict for {nt rhs} [dict get $pegAst rules] {
         array set "" $rhs
