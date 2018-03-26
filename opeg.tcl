@@ -397,7 +397,11 @@ apply {{version code {test ""}} {
     :property -accessor public modes
 
     :public method qualify {rules} {
-      set all [lsort -unique [concat {*}[dict keys $rules] {*}${:accessed}]]
+      set all [dict keys $rules]
+      if {[info exists :accessed]} {
+        lappend all {*}[concat {*}${:accessed}]
+      }
+      set all [lsort -unique $all]
       # puts QUALIFY=$all
       foreach nt $all {
         set qNt ${:name}::${nt}
@@ -414,21 +418,41 @@ apply {{version code {test ""}} {
     }
 
     :public method unqualify {rules nts} {
-
       set nts [concat {*}[lmap nt $nts {list $nt [namespace tail $nt]}]]
-      # puts nts=$nts
+      # puts UQRULES=$rules
       foreach {qNt nt} $nts {
         dict for {lhs rhs} $rules {
           if {$lhs eq $qNt} {
             dict unset rules $lhs
             set lhs $nt
+            if {[dict exists $rules $lhs]} {
+              throw [list DJDSL OPEG DUPLICATE $lhs] "Non-terminal '$lhs' is already defined."
+            }
           }
           dict set rules $lhs [pt::pe::op rename $qNt $nt $rhs]
         }
       }
-      
       return $rules
     }
+
+    :public method unqualify2 {rules nts} {
+      set nts [concat {*}[lmap nt $nts {set out [string map {:: //} $nt]; list $out $nt}]]
+      # puts UQRULES=$rules,$nts
+      foreach {nt qNt} $nts {
+        dict for {lhs rhs} $rules {
+          if {$lhs eq $qNt} {
+            dict unset rules $lhs
+            set lhs $nt
+            if {[dict exists $rules $lhs]} {
+              throw [list DJDSL OPEG DUPLICATE $lhs] "Non-terminal '$lhs' is already defined."
+            }
+          }
+          dict set rules $lhs [pt::pe::op rename $qNt $nt $rhs]
+        }
+      }
+      return [list $rules $nts]
+    }
+
 
 
     :property -accessor public -incremental rules {
@@ -581,6 +605,7 @@ apply {{version code {test ""}} {
     :public method clean {} {
       set container [::djdsl::opeg::Grammar::Container new -grammar [self]]
       ::pt::peg::op flatten $container
+      # puts SPECS(IN)=${:specs}
 
       if {0} {
         puts ------------------------
@@ -601,7 +626,7 @@ apply {{version code {test ""}} {
       
       ::pt::peg::op flatten $container
 
-      set nts [::pt::peg::op reachable $container]
+      set :all [::pt::peg::op reachable $container]
       
       set removed [$container getRemoved]
       # puts removed=$removed
@@ -609,9 +634,9 @@ apply {{version code {test ""}} {
         set :specs [dict remove ${:specs} {*}$removed]
       }
 
-      # puts SPECS=${:specs}
+      # puts SPECS(OUT)=${:specs}
       $container destroy
-      return $nts
+      return ${:all}
     }
 
         #     if {0} {
@@ -671,16 +696,18 @@ apply {{version code {test ""}} {
 
           set nts [$o clean]
           # puts NTS=$nts
-          
-          set r [$o unqualify [$o rules get] $nts]
-          $o eval [list set :rules $r];
-          $o eval [list set :start $uqStart]
-          set specs [$o eval {set :specs}]
-          dict for {k v} $specs {
-            dict set specs [namespace tail $k] $v
-            dict unset spec $k
+
+          if {0} {
+            set r [$o unqualify [$o rules get] $nts]
+            $o eval [list set :rules $r];
+            $o eval [list set :start $uqStart]
+            set specs [$o eval {set :specs}]
+            dict for {k v} $specs {
+              dict set specs [namespace tail $k] $v
+              dict unset specs $k
+            }
+            $o eval [list set :specs $specs]
           }
-          $o eval [list set :specs $specs]
         } else {
           # simple union
           $o clean
@@ -720,21 +747,11 @@ apply {{version code {test ""}} {
         }
       }
 
-      # else {
-      #   puts CALLED=$called
-      #   set fields [lsearch -glob -inline -all $called *::_FIELD_*]
-      #   puts FIELDS=$fields
-      #   foreach f $fields {
-      #     # :import [namespace tail $f] $f
-      #     foreach c [pt::pe::op called [dict get ${:rules} $f]] {
-      #       # :import [namespace tail $c] $c
-      #     }
-      #   }
-      # }
-      
       if {![dict exists ${:rules} $qTgt]} {
         # new rule, set RHS
         set new $rhs
+        # TODO: This is a just a dummy default
+        dict set :modes $qTgt value
       } else {
         # existing rule, add to RHS according to position
         set existing [dict get ${:rules} $qTgt]
@@ -749,12 +766,35 @@ apply {{version code {test ""}} {
             set new [pt::pe choice $rhs $existing]
           }
         }
+        # TODO: What happens to MODES here, if not in accordance?
       }
       dict set :rules $qTgt $new
-      # puts IMPORT=${:rules}
+      # puts SPECS1=${:specs}
       if {[dict exists ${:specs} $src]} {
-        dict set :specs $qTgt [dict get ${:specs} $src]
+        set add [dict get ${:specs} $src]
+        if {[dict exists ${:specs} $qTgt]} {
+          set current [dict get ${:specs} $qTgt]
+          set current [linsert $current $position {*}$add]
+          dict set :specs $qTgt $current
+        } else {
+          dict set :specs $qTgt $add
+        }
       }
+      # puts SPECS2=${:specs}
+
+      if {0} {
+        # TODO: Is field handling needed?
+        puts CALLED=$called
+        set fields [lsearch -glob -inline -all $called *::_FIELD_*]
+        puts FIELDS=$fields
+        foreach f $fields {
+          # :import [namespace tail $f] $f
+          foreach c [pt::pe::op called [dict get ${:rules} $f]] {
+            # :import [namespace tail $c] $c
+          }
+        }
+      }
+      
       return
     }
 
@@ -774,25 +814,50 @@ apply {{version code {test ""}} {
             set pos [expr {[string is integer -strict $position]? 1+$position : "end"}]
             set rhs [lreplace $rhs $pos $pos]
             dict set :rules $src $rhs
+            if {[dict exists ${:specs} $src]} {
+              set spec [dict get ${:specs} $src]
+              set spec [lreplace $spec $position $position]
+              dict set :specs $src $spec
+            }
           } else {
             dict unset :rules $src
+            set :specs [dict remove ${:specs} $src]
           }
         }
       } else {
         dict unset :rules $src
+        set :specs [dict remove ${:specs} $src]
       }
       
       return
+    }
+
+    :public method getSpecs {} {
+      set specs [dict create]
+      dict for {k v} ${:specs} {
+        dict set specs [string map {:: //} $k] $v
+      }
+      return $specs
     }
     
     :public method asPEG {} {
       set rules [dict create]
 
+      lassign [:unqualify2 ${:rules} ${:all}] rules ntMap
+
+      dict for {nt rhs} $rules {
+        dict set rules $nt [list is $rhs mode [dict get ${:modes} [dict get $ntMap $nt]]]
+      }
+      set peg [list pt::grammar::peg [list rules $rules start [list n [string map {:: //} ${:start}]]]]
+
+      pt::peg verify-as-canonical $peg
+      return $peg
+
+      
       dict for {nt rhs} ${:rules} {
         dict set rules $nt [list is $rhs mode [dict get ${:modes} $nt]]
       }
       set peg [list pt::grammar::peg [list rules $rules start [list n ${:start}]]]
-      # puts peg=$peg
       pt::peg verify-as-canonical $peg
       return $peg
     }
@@ -866,8 +931,18 @@ apply {{version code {test ""}} {
         if {[$extra eval {info exists :accessed}]} {
           set accessed [dict merge $accessed [$extra eval {set :accessed}]]
         }
-        set modes [dict merge $modes [$extra eval {set :modes}]]
 
+        
+        # set modes [dict merge $modes [$extra eval {set :modes}]]
+        set m [$extra eval {set :modes}] 
+        if {[info exists :transforms]} {
+          dict for {k v} $m {
+            dict set m [$extra name get]::$k $v
+            dict unset m $k
+          }
+        }
+        set modes [dict merge $modes $m]
+        
         if {[$extra eval {info exists :specs}]} {
           set s [$extra eval {set :specs}]
           if {[info exists :transforms]} {
@@ -1472,9 +1547,10 @@ apply {{version code {test ""}} {
       }
 
       set v ""
-      
-      if {[:info lookup method "input $nt"] ne ""} {
-        set v [:input $nt $start $end {*}$targs]
+
+      set methodName [string map {// " "} $nt]
+      if {[:info lookup method "input $methodName"] ne ""} {
+        set v [:input {*}$methodName $start $end {*}$targs]
       } elseif {[info exists :current]} {
         set v ${:current}
       } else {
@@ -1612,7 +1688,8 @@ apply {{version code {test ""}} {
           }
           # unset -nocomplain :choices($mark)
           # inject the ctor
-          set ctors [[[:info class] generator get] eval {set :specs}]
+          # set ctors [[[:info class] generator get] eval {set :specs}]
+          set ctors [[[:info class] generator get] getSpecs]
           # if {[string match _FIELD_* $sym]} {
           #   puts stderr "---FIELD($sym),$idx,$ctors"
           # }

@@ -250,7 +250,7 @@ void: WS   <- <space>+;
     lappend () [G1 resulting rules nts]
 
         
-  } -cleanup $CLEANUP -result [list {D A} "" {D A} {D A}]
+  } -cleanup $CLEANUP -result [list {G1::A G1::D} {} {G1::A G1::D} {G1::A G1::D}]
 
   # Rules command/query interface
 
@@ -349,7 +349,7 @@ void: WS   <- <space>;
     lappend () [lsort [$(myELang) resulting rules nts]]
 
     [$(myELang) new -factory [set (mf) [ModelFactory new {
-      :public object method "input EXPR" {s e args} {
+      :public object method "input MyELang EXPR" {s e args} {
         incr :counter
         return
       }
@@ -357,7 +357,8 @@ void: WS   <- <space>;
     
     lappend () [$(mf) eval {set :counter}]
     
-  } -cleanup $CLEANUP -result [list {INT WS} {EXPR STAT} {EXPR INT STAT WS} {EXPR INT STAT WS} 2]
+  } -cleanup $CLEANUP -result [list {INT WS} {EXPR STAT} {ELang::WS MyELang::EXPR MyELang::INT MyELang::STAT} \
+                                   {ELang::WS MyELang::EXPR MyELang::INT MyELang::STAT} 2]
 
   test opeg-1.4 "Rule(s): incremental extract w/o rewrite" -setup $SETUP -body {
 
@@ -389,7 +390,7 @@ void: WS   <- <space>;
     lappend () [lsort [$(myELang) resulting rules nts]]
 
     [$(myELang) new -factory [set (mf) [ModelFactory new {
-      :public object method "input OCTAL" {s e args} {
+      :public object method "input MyELang OCTAL" {s e args} {
         incr :counter
         return
       }
@@ -397,7 +398,9 @@ void: WS   <- <space>;
     
     lappend () [$(mf) eval {set :counter}]
     
-  } -cleanup $CLEANUP -result [list {INT WS} {EXPR INT OCTAL STAT} {EXPR INT OCTAL STAT WS} {EXPR INT OCTAL STAT WS} 1] 
+  } -cleanup $CLEANUP -result [list {INT WS} {EXPR INT OCTAL STAT} \
+                                   {ELang::WS MyELang::EXPR MyELang::INT MyELang::OCTAL MyELang::STAT} \
+                                   {ELang::WS MyELang::EXPR MyELang::INT MyELang::OCTAL MyELang::STAT} 1]
 
   test opeg-1.5 "Rule(s): extract with rewrite (<=>)" -setup $SETUP -body {
 
@@ -427,7 +430,7 @@ void: WS   <- <space>;
     lappend () [lsort [$(myELang) resulting rules nts]]
 
     [$(myELang) new -factory [set (mf) [ModelFactory new {
-      :public object method "input EXPR" {s e args} {
+      :public object method "input MyELang EXPR" {s e args} {
         incr :counter
         return
       }
@@ -435,7 +438,8 @@ void: WS   <- <space>;
     
     lappend () [$(mf) eval {set :counter}]
     
-  } -cleanup $CLEANUP -result [list {INT WS} {EXPR STAT} {EXPR INT STAT} {EXPR INT STAT} 2]
+  } -cleanup $CLEANUP -result [list {INT WS} {EXPR STAT} {MyELang::EXPR MyELang::INT MyELang::STAT} \
+                                   {MyELang::EXPR MyELang::INT MyELang::STAT} 2]
 
   
   test opeg-1.6 "Rule(s): incremental extract with rewrite (<=>)" -setup $SETUP -body {
@@ -468,11 +472,11 @@ void: WS   <- <space>;
     lappend () [lsort [$(myELang) resulting rules nts]]
 
     [$(myELang) new -factory [set (mf) [ModelFactory new {
-      :public object method "input OCTAL" {s e args} {
+      :public object method "input MyELang OCTAL" {s e args} {
         dict incr :counter octal
         return
       }
-      :public object method "input INT" {s e args} {
+      :public object method "input MyELang INT" {s e args} {
         dict incr :counter int
         return
       }
@@ -481,8 +485,8 @@ void: WS   <- <space>;
     lappend () [$(mf) eval {set :counter}]
     
   } -cleanup $CLEANUP -result [list INT {D EXPR INT OCTAL STAT} \
-                                   {D EXPR INT OCTAL STAT} \
-                                   {D EXPR INT OCTAL STAT} \
+                                   {MyELang::D MyELang::EXPR MyELang::INT MyELang::OCTAL MyELang::STAT} \
+                                   {MyELang::D MyELang::EXPR MyELang::INT MyELang::OCTAL MyELang::STAT} \
                                    {octal 1 int 2}]
 
    test opeg-1.7 "Rule(s): delete (==>)" -setup $SETUP -body {
@@ -515,11 +519,11 @@ void: WS   <- <space>;
     lappend () [lsort [$(myELang) resulting rules nts]]
 
     [$(myELang) new -factory [set (mf) [ModelFactory new {
-      :public object method "input OCTAL" {s e args} {
+      :public object method "input MyELang OCTAL" {s e args} {
         dict incr :counter octal
         return
       }
-      :public object method "input INT" {s e args} {
+      :public object method "input MyELang INT" {s e args} {
         dict incr :counter int
         return
       }
@@ -527,7 +531,10 @@ void: WS   <- <space>;
     
     lappend () [$(mf) eval {set :counter}]
     
-  } -cleanup $CLEANUP -result [list INT {D EXPR INT OCTAL STAT} {EXPR INT OCTAL STAT} {EXPR INT OCTAL STAT} {octal 2 int 2}]
+  } -cleanup $CLEANUP -result [list INT {D EXPR INT OCTAL STAT} \
+                                   {MyELang::EXPR MyELang::INT MyELang::OCTAL MyELang::STAT} \
+                                   {MyELang::EXPR MyELang::INT MyELang::OCTAL MyELang::STAT} \
+                                   {octal 2 int 2}]
 
   test opeg-1.8 "Rule(s): positional delete (==>)" -setup $SETUP -body {
     
@@ -559,11 +566,11 @@ void: WS   <- <space>;
     lappend () [lsort [$(myELang) resulting rules nts]]
 
     [$(myELang) new -factory [set (mf) [ModelFactory new {
-      :public object method "input OCTAL" {s e args} {
+      :public object method "input MyELang OCTAL" {s e args} {
         dict incr :counter octal
         return
       }
-      :public object method "input INT" {s e args} {
+      :public object method "input MyELang INT" {s e args} {
         dict incr :counter int
         return
       }
@@ -571,7 +578,10 @@ void: WS   <- <space>;
     
     lappend () [$(mf) eval {set :counter}]
     
-  } -cleanup $CLEANUP -result [list INT {D EXPR INT OCTAL STAT} {EXPR INT OCTAL STAT} {EXPR INT OCTAL STAT} {octal 2 int 2}]
+  } -cleanup $CLEANUP -result [list INT {D EXPR INT OCTAL STAT} \
+                                   {MyELang::EXPR MyELang::INT MyELang::OCTAL MyELang::STAT} \
+                                   {MyELang::EXPR MyELang::INT MyELang::OCTAL MyELang::STAT} \
+                                   {octal 2 int 2}]
 
   test opeg-1.9 "Rule(s): extract with cascade/rewrite (<*>)" -setup $SETUP -body {
     
@@ -603,11 +613,11 @@ void: WS   <- <space>;
     lappend () [lsort [$(myELang) resulting rules nts]]
 
     [$(myELang) new -factory [set (mf) [ModelFactory new {
-      :public object method "input OCTAL" {s e args} {
+      :public object method "input MyELang OCTAL" {s e args} {
         dict incr :counter octal
         return
       }
-      :public object method "input INT" {s e args} {
+      :public object method "input MyELang INT" {s e args} {
         dict incr :counter int
         return
       }
@@ -615,7 +625,53 @@ void: WS   <- <space>;
     
     lappend () [$(mf) eval {set :counter}]
     
-  } -cleanup $CLEANUP -result [list {D INT} {EXPR INT OCTAL STAT} {D EXPR INT OCTAL STAT} {D EXPR INT OCTAL STAT} {octal 1 int 2}]
+  } -cleanup $CLEANUP -result [list {D INT} {EXPR INT OCTAL STAT} \
+                                   {MyELang::D MyELang::EXPR MyELang::INT MyELang::OCTAL MyELang::STAT} \
+                                   {MyELang::D MyELang::EXPR MyELang::INT MyELang::OCTAL MyELang::STAT} \
+                                   {octal 1 int 2}]
+
+  test opeg-1.10 "extract w/o rewrite (existing)" -setup $SETUP -body {
+     
+    # G0 (composed grammar)
+    Grammar create ::G0 -start A
+
+    G0 loadRules {
+      A <- B+;
+      B <- 'b';
+    }
+
+    # G1 (receiving grammar)
+    Grammar create ::G1 -merges G0 -start A {
+      A <- B+;
+      B <- 'B';
+    } {
+      A <== G0::A
+    }
+
+    # G1' (resulting grammar)
+    lappend () [G1 resulting rules nts]
+
+    set (p) [[G1 resulting] new -factory [set (mf) [ModelFactory new {
+      :public object method "input G0 B" {s e args} {
+        dict incr :counter b
+        return
+      }
+      :public object method "input G1 B" {s e args} {
+        dict incr :counter B
+        return
+      }
+    }]]]
+    
+    $(p) parse "bbb"
+
+    lappend () [$(mf) eval {set :counter}]
+
+    $(p) parse "BBB"
+    
+    lappend () [$(mf) eval {set :counter}]
+    
+  } -cleanup $CLEANUP -result [list {G0::B G1::A G1::B} {b 3} {b 3 B 3}]
+
 
   test opeg-2.1 "Define object grammars + merge" -setup $SETUP -body {
 
@@ -682,7 +738,7 @@ void: WS   <- <space>;
     lappend () [$(a) info class]
     lappend () [$(a) cget -v]
         
-  } -cleanup $CLEANUP -result [list {_FIELD_0_v S} ::A "a"]
+  } -cleanup $CLEANUP -result [list {G0::_FIELD_0_v G1::S} ::A "a"]
 
   test opeg-2.3 "Define object grammars + merge + queries" -setup $SETUP -body {
      
@@ -732,9 +788,86 @@ void: WS   <- <space>;
 
     set (p2) [[G1 resulting] new]
     set (c)  [$(p2) parse c]
+    lappend () [$(c) info class]
     lappend () [$(c) cget -v]
         
-  } -cleanup $CLEANUP -result [list {B _FIELD_0_v S} ::A {1st get b} "2nd get c"]
+  } -cleanup $CLEANUP -result [list {G0::B G0::_FIELD_0_v G1::S} ::A "1st get b" ::A "2nd get c"]
+
+  
+  test opeg-2.4 "Define object grammars + merge + append" -setup $SETUP -body {
+     
+    # G0 (composed grammar)
+    Grammar create ::G0 -start A
+
+    G0 loadRules {
+      A <- `AClass` v:'a';
+    }
+
+    # G1 (receiving grammar)
+    Grammar create ::G1 -merges G0 -start A {
+      A <- ('a' / 'A') A / `DClass` v:D;
+      D <- 'd';
+    } {
+      A <== G0::A 0
+    }
+
+    # G1' (resulting grammar)
+    lappend () [G1 resulting rules nts]
+
+    set (helper) [nx::Class create ::AClass {
+      :property v
+      :public forward 1st %self shout %method
+      :public forward 2nd %self shout %method
+      :public method shout {args} {
+        return $args
+      }
+    }]
+
+    set (helper2) [nx::Class create ::DClass -superclasses AClass]
+    
+    set (p) [[G1 resulting] new]
+    set (a) [$(p) parse "d"]
+    lappend () [$(a) info class]
+    lappend () [$(a) cget -v]
+    set (a2) [$(p) parse "a"]
+    lappend () [$(a2) info class]
+    lappend () [$(a2) cget -v]
+        
+  } -cleanup $CLEANUP -result [list {G0::_FIELD_0_v G1::A G1::D G1::_FIELD_0_v} "::DClass" "d" "::AClass" "a"]
+
+  test opeg-2.5 "Define object grammars + merge + append" -setup $SETUP -body {
+     
+    # G0 (composed grammar)
+    Grammar create ::G0 -start A
+
+    G0 loadRules {
+      A <- `AClass` v:'a';
+    }
+
+    # G1 (receiving grammar)
+    Grammar create ::G1 -merges G0 -start A {
+      A <- ('a' / 'A') A / `DClass` v:D;
+      D <- 'd';
+    } {
+      A <== G0::A 0
+      {G1::A end} ==>
+    }
+
+    # G1' (resulting grammar)
+    lappend () [G1 resulting rules nts]
+
+    set (helper) [nx::Class create ::AClass {
+      :property v
+    }]
+
+    set (helper2) [nx::Class create ::DClass -superclasses AClass]
+    
+    set (p) [[G1 resulting] new]
+    set (a2) [$(p) parse "a"]
+    lappend () [$(a2) info class]
+    lappend () [$(a2) cget -v]
+    
+  } -cleanup $CLEANUP -result [list {G0::_FIELD_0_v G1::A} ::AClass a]
 
   
   # TODO: ... Why does [$container reachable] contain 'n'?
@@ -750,6 +883,9 @@ void: WS   <- <space>;
   #       ... get rid of epsilons in cleaned choices {is {/ {+ {n OCTAL}} epsilon}}
   #       ... hide _FIELD_* NTs from introspective output?
   #       ... modes under composition, in particular, the qualified ones.
+  #       ... opeg-2.4: when using <=> (rather than <==), should we rewrite field NTs
+  #           automatically for one level?
+  #       ... add validation spec vs. rules: cardinality of choice expressions and corresponding generators ...
 }
 
 return
