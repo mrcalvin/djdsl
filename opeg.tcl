@@ -185,7 +185,7 @@ apply {{version code {test ""}} {
   nx::Class create Grammar -superclasses Rewriter {
 
     :property -accessor public {name:substdefault "[namespace tail [self]]"}
-    :property -accessor public start:required; # ,alnum
+    :property -accessor public {start ""};
 
     :object variable -accessor public parser:object [Parser new]
 
@@ -231,14 +231,22 @@ apply {{version code {test ""}} {
       set tmpl {OPEG @name@ (@start@)
         @rules@
         END;}
+      if {${:start} eq ""} {
+        throw [list DJDSL OPEG NOSTART [self]] \
+            "Start symbol must be provided when initialising from rules set."
+      }
       set mappings [list @name@ ${:name} @start@ ${:start} @rules@ $rules]
       set opegScript [string map \
                           $mappings \
                           $tmpl]
-      set opegAst [[[current class] parser get] parset $opegScript]
-      :load $opegAst $opegScript
+      :setScript $opegScript
       return
-      
+    }
+
+    :protected method setScript {script} {
+      set opegAst [[[current class] parser get] parset $script]
+      :load $opegAst $script
+      return
     }
 
     :public method loadRules {script} {
@@ -246,6 +254,13 @@ apply {{version code {test ""}} {
       :setRules $script
       return
     }
+
+    :public object method newFromScript {script args} {
+      set g [:new {*}$args]
+      $g eval [list :setScript $script]
+      return $g
+    }
+    
     
 
     nx::Class create [self]::ParserClass -superclasses nx::Class {
@@ -538,39 +553,6 @@ apply {{version code {test ""}} {
     :public object method print {opegScript} {
       ${:parser} print $opegScript
     }
-    
-    :public object method "from script" {opegScript args} {
-      set g [:new {*}$args]
-      set opegAst [${:parser} parset $opegScript]
-      # 2) Downshape OPEG "AST" into serial PEG
-      $g load $opegAst $opegScript
-      return $g
-    }
-
-    :public object method "from rules" {rules -name:required -start args} {
-
-      set tmpl {OPEG @name@ (@start@)
-        @rules@
-        END;}
-      
-      set mappings [list @name@ $name @start@ $start @rules@ $rules]
-      set opegScript [string map \
-                          $mappings \
-                          $tmpl]
-      
-      return [:from script $opegScript -name $name {*}$args]
-
-    }
-
-    :public object method "from file" {filepath args} {
-      set fh [open $filepath r]
-      try {
-        set opegScript [read $fh]
-        :from script $opegScript {*}$args
-      } finally {
-        close $fh
-      }
-    }
 
     #
     # Parser API
@@ -847,18 +829,12 @@ apply {{version code {test ""}} {
 
       dict for {nt rhs} $rules {
         dict set rules $nt [list is $rhs mode [dict get ${:modes} [dict get $ntMap $nt]]]
+        # puts "$nt <- $rhs"
       }
       set peg [list pt::grammar::peg [list rules $rules start [list n [string map {:: //} ${:start}]]]]
 
       pt::peg verify-as-canonical $peg
-      return $peg
-
       
-      dict for {nt rhs} ${:rules} {
-        dict set rules $nt [list is $rhs mode [dict get ${:modes} $nt]]
-      }
-      set peg [list pt::grammar::peg [list rules $rules start [list n ${:start}]]]
-      pt::peg verify-as-canonical $peg
       return $peg
     }
 
@@ -1018,9 +994,10 @@ apply {{version code {test ""}} {
     # OPEG to PEG rewriter
     #
     :public method load {opegAst input} {
-      
+
       set :(defCounter) 0
-      set pegAst [lindex [:rewrite $opegAst $input] 1]
+      set peg [:rewrite $opegAst $input]
+      set pegAst [lindex $peg 1]
       unset :(defCounter)
       ## add ctors to OPEG structure
       if {[info exists :specs]} {
@@ -1034,7 +1011,6 @@ apply {{version code {test ""}} {
 
       # puts =========
       # puts LOADSPEC([self])=${:specs}
-      
       dict for {nt rhs} [dict get $pegAst rules] {
         array set "" $rhs
         dict set :rules $nt $(is)
@@ -1062,7 +1038,18 @@ apply {{version code {test ""}} {
         lappend args {*}[dict values $tmp]
         unset :(fieldDefs)
       }
-      next [list $s $e {*}$args]
+      next [list $s $e {*}$args]      
+    }
+
+    :method "input Header" {s e args} {
+      if {${:name} eq [namespace tail [self]]} {
+        # update name defaults from the actual grammar def
+        set :name [lindex $args 0 1]
+      }
+      if {${:start} eq ""} {
+        set :start [lindex $args 1 1]
+      }
+      next
     }
     
     :method "input Ctor" {s e args} {
@@ -1442,7 +1429,14 @@ apply {{version code {test ""}} {
   
   nx::Class create ModelFactory {
     
-    :variable sourcecode 
+    :variable sourcecode
+    :variable callingNamespace
+    
+    :public method generate {generator asgmts} {
+      
+      # puts stderr GENERATE=|[list $generator new {*}$asgmts]|$asgmts|
+      namespace eval ${:callingNamespace} [list $generator new {*}$asgmts]
+    }
 
     #
     # TODO: the flow in postOrder must be consolidated and
@@ -1456,25 +1450,38 @@ apply {{version code {test ""}} {
       set fixes [list]
       if {[llength $ast]} {
         foreach c $ast {
+
           set kidz [:postOrder $varName $c $script $level]
+
           lassign $kidz pkg cArgs
           lassign $pkg cFields cFixes
           lappend childrenFlds {*}$cFields
           lappend fixes {*}$cFixes
-          if {[llength $cArgs]==1} {
-            lappend targs $cArgs
-          } else {
-            lappend targs {*}$cArgs
-          }
-        }
 
-        # TODO: Is this really necessary? Only run loop when c > 1?
-        if {[llength $targs] == 1} {
-          set targs [lindex $targs 0]
+          if {0} {
+            puts -nonewline |cArgs=$cArgs|L(cArgs)=[llength $cArgs]|
+            if {[info exists targs]} {
+              puts targs=$targs|
+            } else {
+              puts "targs=|"
+            }
+          }
+          lappend targs {*}$cArgs
         }
         
       } else {
+
+        if {0 && $start > $end} {
+          throw [list DJDSL OPEG INVALIDPARSE $start $end $ast] "Invalid parse detected."
+        }
+        
         set targs [string range ${:sourcecode} $start $end]
+
+        set test [list $targs]
+        if {$test ne $targs} {
+          set targs $test
+        }
+
       }
 
       # coalesce fields
@@ -1496,7 +1503,7 @@ apply {{version code {test ""}} {
           }
         }
       }
-
+      
       set flds [dict map {k v} $flds {
         if {[llength $v] == 1} {
           lindex $v 0
@@ -1524,18 +1531,23 @@ apply {{version code {test ""}} {
         # dict lappend flds -$f {*}$targs
         # dict lappend flds -$f {*}$targs
 
+        if {[llength $targs] == 1 && "$targs" ne "[list $targs]"} {
+          set targs [lindex $targs 0]
+        }
+
         if {$objspec ne ""} {
           lappend fixes [list $f [dict get $objspec generator] $targs]
         } else {
-          dict set flds -$f $targs
-        }
+           dict set flds -$f $targs
+         }
 
       } else {
         
         if {$objspec ne ""} {
           dict with objspec {      
             if {[info exists generator]} {
-              set :current [$generator new {*}$flds]
+              # puts stderr "$generator new {*}$flds"
+              set :current [:generate $generator $flds]
               set flds [list]
               if {[llength $fixes]} {
                 lappend :fixes ${:current} $fixes
@@ -1580,26 +1592,63 @@ apply {{version code {test ""}} {
         return -code error "Unable to run fixes: $later"
       }
     }
+
+    :public method getParse {args} {}
+
+    :public method reset {args} {}
+    
+  }; # ModelFactory
+
+  nx::Class create LanguageModelFactory -superclasses ModelFactory {
+    :property -accessor public lm:object,type=::djdsl::lm::LanguageModel,required
+    :variable context
+
+    :public method init {} {
+      set asset [namespace qualifiers ${:lm}]
+      set :context [$asset new [string tolower [namespace tail ${:lm}]]]
+    }
+    :public method generate {generator asgmt} {
+      if {[namespace tail [${:context} info class]] ne $generator} {
+        # puts stderr "${:context} new [string tolower $generator] {*}$asgmt"
+        ${:context} new [string tolower $generator] {*}$asgmt
+      } else {
+        if {[llength asgmt]} {
+          ${:context} configure {*}$asgmt
+        }
+        return ${:context}
+      }
+    }
   }
   
   nx::Class create Builder -superclasses pt::rde::nx {
 
     :public method parse {script} {
 
+      set ns [uplevel [current activelevel] namespace current]
+
       set ast [:parset $script]
 
-      # puts ast=$ast
+      # TODO: Processing should happen in the factory, no calls back
+      # and forth all the time! Remodel into a DefaultFactory with
+      # getParse, reset etc.
       set list {}
       set factory [[:info class] factory get]
       $factory eval [list set :sourcecode $script]
+      $factory eval [list set :callingNamespace $ns]
+      # puts ast=$ast
       $factory postOrder v $ast {
         if {$v ne "" && [::nsf::object::exists $v]} {
           lappend list $v
         }
       }
       $factory eval {unset :sourcecode}
-      
-      set root [lindex $list end]
+
+      if {[llength $list]} {
+        set root [lindex $list end]
+      } else {
+        set root [$factory getParse]
+        $factory reset
+      }
 
       # TODO: relocate into factory object and turn it into a fixup
       # method as in Enso
@@ -1715,7 +1764,7 @@ apply {{version code {test ""}} {
     }
   }; # Builder
 
-  namespace export Parser BuilderGenerator ModelFactory Grammar
+  namespace export Parser BuilderGenerator ModelFactory Grammar LanguageModelFactory
   
 } {
 
@@ -1726,12 +1775,12 @@ apply {{version code {test ""}} {
   # An examplary domain model (as an NX class model). This is a
   # variant of Fowler's state machine:
 
-  nx::Class create ::StateMachine {
+  nx::Class create StateMachine {
     :property -accessor public start:alnum; #object,type=StateMachine::State
     :property -accessor public states:object,type=State,1..*
   }
   
-  nx::Class create ::State {
+  nx::Class create State {
     :property -accessor public name
     :property -accessor public transitions:object,type=Transition,0..* {
       :public object method value=isSet {obj prop} {
@@ -1740,12 +1789,12 @@ apply {{version code {test ""}} {
     }
   }
 
-  nx::Class create ::Event {
+  nx::Class create Event {
     :property -accessor public name
     :property -accessor public code:alnum
   }
   
-  nx::Class create ::Transition {
+  nx::Class create Transition {
     :property -accessor public source:object,type=State
     :property -accessor public target:alnum
     :property -accessor public trigger:object,type=Event
@@ -1767,11 +1816,11 @@ apply {{version code {test ""}} {
 #// end //
 #// mgc1 //
       E  <- `Event` ON name:<alnum>+ ;
-      ON <- WS 'on' WS;
+void: ON <- WS 'on' WS;
 #// end //
-   START <- WS 'start' WS;
-   STATE <- WS 'state' WS;
-      GO <- WS 'go' WS;
+void: START <- WS 'start' WS;
+void: STATE <- WS 'state' WS;
+void: GO <- WS 'go' WS;
 void: WS <- <space>+;
   }]
 
@@ -1779,7 +1828,7 @@ void: WS <- <space>+;
   # From this ```Grammar``` instance, a parser is generated.
   #
   
-  set parser [$grammar new]
+  set parser1 [$grammar new]
 
   #
   # This parser is capable of processing (translating) input in the
@@ -1810,11 +1859,11 @@ void: WS <- <space>+;
 
   regsub -all -line {^\s*#//.*//\s*$} $input {} input
   
-  set stateMachine [$parser parse $input]
+  set stateMachine [$parser1 parse $input]
 
   # Once can now navigate and further process the language-model
   # instantiation:
-  
+
   ? {$stateMachine info class} ::StateMachine
   ? {$stateMachine start get} "idle"
   ? {llength [$stateMachine states get]} 5
@@ -1855,10 +1904,10 @@ void: WS <- <space>+;}
       E  <- `Event` ON NAME ;
       NAME  <- name:<alnum>+;
 #// end //
-     ON  <- WS 'on' WS;
-   START <- WS 'start' WS;
-   STATE <- WS 'state' WS;
-      GO <- WS 'go' WS;
+void:     ON  <- WS 'on' WS;
+void:   START <- WS 'start' WS;
+void:   STATE <- WS 'state' WS;
+void:   GO <- WS 'go' WS;
 void: WS <- <space>+;
     }]
 
@@ -2009,8 +2058,8 @@ leaf: Num         <- Sign? Digit+                      			       ;
     }
   }
 
-  # The custom factory is then passed to the ```bgen``` generator
-  # method.
+  # The custom factory is then passed to the construction call for a
+  # parser.
   
   set grammar [Grammar new -name Calculator -start Term $g]
   set parser [$grammar new -factory [CalculatorFactory new]]
@@ -2032,7 +2081,8 @@ leaf: Num         <- Sign? Digit+                      			       ;
     leaf:  Digit1       <- <digit>+;
     END;}
 
-  set coordGrammar [Grammar from script $g2a]
+  set coordGrammar [Grammar newFromScript $g2a]
+  ? {$coordGrammar name get} "Coordinate"
   set coordBuilder [$coordGrammar new]
 
   ? {[$coordBuilder parse {(11,2)}] info class} ::Point
@@ -2043,14 +2093,16 @@ leaf: Num         <- Sign? Digit+                      			       ;
   # An alternative grammar, mapping to the same language model.
   #
   
-  set g2b {
-    OPEG Coordinate (P)
-    XY          <- x:Digit ',' y:Digit;
-    P           <- `Point` '(' XY ')';
-    leaf:  Digit       <- <digit>+;
-    END;}
+  
+  set coordGrammar [Grammar newFromScript {
+  OPEG Coordinate (P)
+		XY          <- x:Digit ',' y:Digit;
+       		P           <- `Point` '(' XY ')';
+	 leaf:  Digit       <- <digit>+;
+    END;
+  }
 
-  set coordGrammar [Grammar from script $g2b]
+   ]
   set coordBuilder [$coordGrammar new]
   
   ? {[$coordBuilder parse {(1,2)}] info class} ::Point
@@ -2058,28 +2110,148 @@ leaf: Num         <- Sign? Digit+                      			       ;
 
   #
   # Yet another grammar, mapping to the same language model. The
-  # alternatives demonstrate how +fields+ can be distributed across
-  # different non-terminals level, still yielding the same
-  # instantiation.
+  # alternatives demonstrate how +assignment generators+ (i.e., +x+
+  # and +y+) can be distributed across different non-terminals level,
+  # still yielding the same instantiation.
   #
-  
-  set g2c {
-    OPEG Coordinate (P)
-    P                  <- `Point` '(' XY ')';
-    XY                 <- A ',' B;
-    A                  <- x:Digit;
-    B                  <- y:Digit;
-    leaf:  Digit       <- <digit>+;
-    END;}
+ 
 
-  set coordGrammar [Grammar from script $g2c]
+  set coordGrammar [Grammar newFromScript {
+    OPEG Coordinate (P)
+    	P           <- `Point` '(' XY ')';
+    	XY          <- A ',' B;
+    	A           <- x:Digit;
+    	B           <- y:Digit;
+ leaf:  Digit       <- <digit>+;
+    END;
+  }]
   set coordBuilder [$coordGrammar new]
   
   ? {[$coordBuilder parse {(1,2)}] info class} ::Point
   ? {[$coordBuilder parse {(3,4)}] cget -y} 4
 
   #
-  # === Debugging
+  # == DSL extension (ex.: DOT definition of graphs)
+  #
+
+  #
+  # === Abstract syntax
+  #
+
+  package req djdsl::lm
+  
+  namespace import ::djdsl::lm::*
+
+
+  Asset create Graphs {
+    
+    LanguageModel create Graph {
+      :property name:alnum
+      :property -incremental edges:object,type=Graph::Edge,0..n
+      :property -accessor public nodes {
+        :public object method value=get {obj prop name:optional} {
+          set nodes [next [list $obj $prop]]
+          if {[info exists name]} {
+            dict get $nodes $name
+          } else {
+            return [dict values $nodes]
+          }
+        }
+        :public object method value=isSet {obj prop name} {
+          set nodes [next [list $obj $prop]]
+          dict exists $nodes $name
+        }
+
+        :public object method value=set {obj prop name value} {
+          $obj eval [list dict set :$prop $name $value]
+        }
+      }
+
+      :public method init {} {
+        if {![info exists :nodes]} {
+          set :nodes [dict create]
+        }
+      }
+      
+      Classifier create Node {
+        :property -accessor public name:required
+
+        :public object method "new" {-name -childof args} {
+          if {[$childof nodes isSet $name]} {
+            $childof nodes get $name
+          } else {
+            # puts stderr "[current nextmethod] [list -name $name -childof $childof {*}$args]"
+            # TODO: Why is passing -childof not working here? 
+            $childof nodes set $name [set r [next [list -name $name {*}$args]]]
+          }
+      }
+
+        
+      }
+      Classifier create Edge {
+        :property -accessor public a:object,type=Node
+        :property -accessor public b:object,type=Node
+      }
+    }
+    
+    Collaboration create weighted {
+      Classifier create Weight {
+        :property -accessor public {value:integer 0}
+      }
+      Role create Edge {
+        :property -accessor public weight:object,type=Weight
+      }
+    }
+  }
+
+  set dotGrammar [Grammar newFromScript {
+    OPEG Dot (G)
+    #// gpl1 //  
+    G           <- `Graph` GRAPH OBRACKET StmtList CBRACKET;
+    StmtList    <- (Stmt SCOLON)*;
+    Stmt        <- edges:EdgeStmt / NodeStmt;
+    EdgeStmt    <- `Edge` a:(`$root nodes $0` NodeID) EDGEOP b:(`$root nodes $0` NodeID);
+    NodeStmt    <- `Node` name:NodeID;
+    NodeID      <- QUOTE Id QUOTE;
+    Id          <- !QUOTE (<space>/<alnum>)+;
+    #// end //  
+    void:  QUOTE    <- '\"';
+    void:  EDGEOP   <- WS '--' WS ;
+    void:  NODE     <- WS 'node' WS ;
+    void:  GRAPH    <- WS 'graph' WS ;
+    void:  OBRACKET <- WS '{' WS ;
+    void:  CBRACKET <- WS '}' WS;
+    void:  SCOLON   <- WS ';' WS;
+    void:  WS       <- (COMMENT / <space>)*;
+    void:  COMMENT  <- '//' (!EOL .)* EOL ;
+    void:  EOL      <- '\n' / '\r' ;
+
+    END;
+  }]
+
+  set lmf [LanguageModelFactory new -lm [namespace current]::Graphs::Graph]
+  
+  set dotParser [$dotGrammar new -factory $lmf]
+  set str {
+    graph {
+      // node definitions
+      "1st Edition";
+      "2nd Edition";
+      "3rd Edition";
+      // edge definitions
+      "1st Edition" -- "2nd Edition";
+      "2nd Edition" -- "3rd Edition";
+    }
+  }
+
+  set graph [$dotParser parse $str]
+
+  ? {$graph info class} ::Graphs::Graph
+  ? {llength [$graph edges get]} 2
+  ? {llength [$graph nodes get]} 3
+  
+  #
+  # == Debugging
   #
   # To turn on debugging, add a ```package req debug ``` early in this
   # script (at the top), and mark a script range using:
@@ -2093,12 +2265,78 @@ leaf: Num         <- Sign? Digit+                      			       ;
 
 
   #
-  # === Varia
+  # == Varia
   # 
-  
-  # TODO: validation rules: no definition with field declarations must
-  # be in mode 'leaf'.
 
+  #
+  # Excursus: 
+  #
+
+  set dotPeg [Grammar newFromScript {
+    OPEG Dot (G)
+    #// pure1 //  
+    G           <- GRAPH OBRACKET StmtList CBRACKET;
+    StmtList    <- (Stmt SCOLON)*;
+    Stmt        <- EdgeStmt / NodeStmt;
+    EdgeStmt    <- NodeID EDGEOP NodeID;
+    NodeStmt    <- NodeID;
+    NodeID      <- QUOTE Id QUOTE;
+    Id          <- !QUOTE (<space>/<alnum>)+;
+    #// end //  
+    void:  QUOTE    <- '\"';
+    void:  EDGEOP   <- WS '--' WS ;
+    void:  NODE     <- WS 'node' WS ;
+    void:  GRAPH    <- WS 'graph' WS ;
+    void:  OBRACKET <- WS '{' WS ;
+    void:  CBRACKET <- WS '}' WS;
+    void:  SCOLON   <- WS ';' WS;
+    void:  WS       <- (COMMENT / <space>)*;
+    void:  COMMENT  <- '//' (!EOL .)* EOL ;
+    void:  EOL      <- '\n' / '\r' ;
+
+    END;
+  }]
+
+  set dotParser [$dotPeg new -factory [set mf [ModelFactory new {
+    :object property -accessor public result
+
+    :public object method "input EdgeStmt" {s e node1 node2} {
+      dict lappend :result edges [list $node1 $node2]
+      return
+    }
+
+    # :public object method "input EdgeStmt" {s e args} {
+    #   dict lappend :result edges $args
+    #   return
+    # }
+    
+    :public object method "input NodeStmt" {s e node} {
+      dict lappend :result nodes $node
+      return
+    }
+
+    # :public object method "input NodeStmt" {s e args} {
+    #   dict lappend :result nodes {*}$args
+    #   return
+    # }
+    
+    :public object method getParse {} {
+      return ${:result}
+    }
+    :public object method reset {} {
+      unset -nocomplain :result
+    }
+  }]]]
+
+  ? {$dotParser parse $str} [list \
+                                 nodes {{1st Edition} {2nd Edition} {3rd Edition}} \
+                                 edges {{{1st Edition} {2nd Edition}} {{2nd Edition} {3rd Edition}}}]
+
+  # Grammar new -start G -name ODot {
+  # 
+  #}
+
+  
   # TODO: is this also working?
   # set g2 {
   # OPEG Coordinate (P)
@@ -2124,8 +2362,6 @@ leaf: Num         <- Sign? Digit+                      			       ;
   set coordParser [[pt::rde::nx pgen $g1] new]
   # $coordParser print {(11,22)}
   puts stderr [$coordParser parset {(11,22)}]
-
-
 }
 
 

@@ -869,24 +869,80 @@ void: WS   <- <space>;
     
   } -cleanup $CLEANUP -result [list {G0::_FIELD_0_v G1::A} ::AClass a]
 
+
+  test opeg-3.1 "Special-value propagation (parser <-> factory): quoted string" -setup $SETUP -body {
+
+    nx::Class create C {
+      :property p1
+    }
+
+    set (g) [Grammar newFromScript {
+      OPEG MyPEG (D)
+         D <- `C` p1:E;
+ leaf:   E <- '\"' <alnum>+ '\"';
+      END;
+    }]
+    
+    set (p) [$(g) new]
+    
+    set (out) [$(p) parse {"abc"}]
+    
+    lappend () [expr {[$(out) info class] eq [C]}]
+    lappend () [$(out) cget -p1]
+    
+  } -cleanup $CLEANUP -result [list 1 \"abc\"]
   
-  # TODO: ... Why does [$container reachable] contain 'n'?
-  #       ... Can superfluous epsilons in sequences be eliminated? flattens? in:
-  #        ... {x epsilon {+ alpha} epsilon}
-  #       ... Issue: restriction via renaming vs. PG transformations?
-  #       When a rule gets renamed, its usefulness cannot be
-  #       determined anymore based on its RHS. This may change
-  #       transformations, whether relevant details are encoded at the caller's
-  #       site (calling RHS) or at the callee's side (called RHS).
-  #       ... RULE COMPOSITION: What about attributes (leaf, value, void) under combination?
-  #       ... check again whether ? and * should really be marked as realizable, widening or restricting?
-  #       ... get rid of epsilons in cleaned choices {is {/ {+ {n OCTAL}} epsilon}}
-  #       ... hide _FIELD_* NTs from introspective output?
-  #       ... modes under composition, in particular, the qualified ones.
-  #       ... opeg-2.4: when using <=> (rather than <==), should we rewrite field NTs
-  #           automatically for one level?
-  #       ... add validation spec vs. rules: cardinality of choice expressions and corresponding generators ...
+  test opeg-3.2 "Special-value propagation (parser <-> factory): invalid list" -setup $SETUP -body {
+    
+    set (helper) [nx::Class create C {
+      :property p1
+    }]
+    
+    set (g) [Grammar newFromScript "
+      OPEG MyPEG (D)
+                D <- `C` p1:E (<space>+ E)+;
+      leaf:  	E <- '\"' (<alnum> / '\{' / '\}')+ '\"';
+      END;
+    "]
+    
+    set (p) [$(g) new]
+  
+    
+    set x "\{\}c"
+    
+    lappend () [string is list $x]
+    
+    set (out) [$(p) parse "\"$x\" \"{}xz\""]
+    
+    lappend () [expr {[$(out) info class] eq $(helper)}]
+    lappend () [expr {[$(out) cget -p1] eq "\"$x\""}]
+    lappend () [string is list [lindex [$(out) cget -p1] 0]]
+    
+  } -cleanup $CLEANUP -result [list 0 1 1 0]
 }
+
+# TODO: ... Why does [$container reachable] contain 'n'?
+#       ... Can superfluous epsilons in sequences be eliminated? flattens? in:
+#        ... {x epsilon {+ alpha} epsilon}
+#       ... Issue: restriction via renaming vs. PG transformations?
+#       When a rule gets renamed, its usefulness cannot be
+#       determined anymore based on its RHS. This may change
+#       transformations, whether relevant details are encoded at the caller's
+#       site (calling RHS) or at the callee's side (called RHS).
+#       ... RULE COMPOSITION: What about attributes (leaf, value, void) under combination?
+#       ... check again whether ? and * should really be marked as realizable, widening or restricting?
+#       ... get rid of epsilons in cleaned choices {is {/ {+ {n OCTAL}} epsilon}}
+#       ... hide _FIELD_* NTs from introspective output?
+#       ... modes under composition, in particular, the qualified ones.
+#       ... opeg-2.4: when using <=> (rather than <==), should we rewrite field NTs
+#           automatically for one level?
+#       ... add validation spec vs. rules:
+#           - cardinality of choice expressions and corresponding generators ...
+#           - no definition with field declarations must be in mode 'leaf'.
+#       ...   Check the invalid parses on ASGMT generator plus * :
+#           if {0 && $start > $end} {
+#             throw [list DJDSL OPEG INVALIDPARSE $start $end $ast] "Invalid parse detected."
+#
 
 return
 if {0} {
