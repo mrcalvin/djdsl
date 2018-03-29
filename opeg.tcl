@@ -702,15 +702,20 @@ apply {{version code {test ""}} {
     # TRANSFORMS
     #
 
-    :public forward "TRANSFORM <*>" %self import -rewrite -cascade
+    :public forward "TRANSFORM <*>" %self import -gtors -rewrite -cascade
     
-    :public forward "TRANSFORM <=>" %self import -rewrite
+    :public forward "TRANSFORM <=>" %self import -gtors -rewrite
 
-    :public forward "TRANSFORM <==" %self import 
+    :public forward "TRANSFORM <->" %self import -rewrite
+
+    :public forward "TRANSFORM <==" %self import -gtors
+
+    :public forward "TRANSFORM <-=" %self import 
     
-    :public method import {-rewrite:switch -cascade:switch tgt src {position end}} {
+    :public method import {-gtors:switch -rewrite:switch -cascade:switch tgt src {position end}} {
 
       set qTgt ${:name}::$tgt
+
       if {![dict exists ${:rules} $src]} {
         throw [list DJDSL OPEG TRANSFORM NX $src] "The source non-terminal '$src' does not exist."
       }
@@ -723,8 +728,8 @@ apply {{version code {test ""}} {
           set qNt ${:name}::[namespace tail $c]
           set rhs [pt::pe::op rename $c $qNt $rhs]
 
-          if {$cascade && $c ne $src} {
-            :import -rewrite -cascade [namespace tail $c] $c
+          if {$cascade && $c ne $src && [dict exists ${:rules} $c]} {
+            :import -rewrite -cascade -gtors [namespace tail $c] $c
           }
         }
       }
@@ -732,8 +737,13 @@ apply {{version code {test ""}} {
       if {![dict exists ${:rules} $qTgt]} {
         # new rule, set RHS
         set new $rhs
-        # TODO: This is a just a dummy default
-        dict set :modes $qTgt value
+
+        if {[dict exists ${:modes} $src]} {
+          dict set :modes $qTgt [dict get ${:modes} $src]
+        } else {
+          # TODO: Does this make sense? Can this happen?
+          dict set :modes $qTgt value
+        }
       } else {
         # existing rule, add to RHS according to position
         set existing [dict get ${:rules} $qTgt]
@@ -752,7 +762,7 @@ apply {{version code {test ""}} {
       }
       dict set :rules $qTgt $new
       # puts SPECS1=${:specs}
-      if {[dict exists ${:specs} $src]} {
+      if {$gtors && [dict exists ${:specs} $src]} {
         set add [dict get ${:specs} $src]
         if {[dict exists ${:specs} $qTgt]} {
           set current [dict get ${:specs} $qTgt]
@@ -815,11 +825,15 @@ apply {{version code {test ""}} {
     }
 
     :public method getSpecs {} {
-      set specs [dict create]
-      dict for {k v} ${:specs} {
-        dict set specs [string map {:: //} $k] $v
+      if {[info commands [self]::resulting] ne ""} {
+        [self]::resulting getSpecs
+      } else {
+        set specs [dict create]
+        dict for {k v} ${:specs} {
+          dict set specs [string map {:: //} $k] $v
+        }
+        return $specs
       }
-      return $specs
     }
     
     :public method asPEG {} {
@@ -2172,20 +2186,28 @@ leaf: Num         <- Sign? Digit+                      			       ;
           set :nodes [dict create]
         }
       }
+
+      :public method mkNode {classifier -name args} {
+        if {[:nodes isSet $name]} {
+          :nodes get $name
+        } else {
+          :nodes set $name [set r [$classifier new -childof [self] -name $name {*}$args]]
+        }
+        return $r
+      }
       
       Classifier create Node {
         :property -accessor public name:required
 
-        :public object method "new" {-name -childof args} {
-          if {[$childof nodes isSet $name]} {
-            $childof nodes get $name
-          } else {
-            # puts stderr "[current nextmethod] [list -name $name -childof $childof {*}$args]"
-            # TODO: Why is passing -childof not working here? 
-            $childof nodes set $name [set r [next [list -name $name {*}$args]]]
-          }
-      }
-
+        # :public object method new {-name -childof args} {
+        #  if {[$childof nodes isSet $name]} {
+        #    $childof nodes get $name
+        #  } else {
+        #    # puts stderr "[current nextmethod] [list -name $name -childof $childof {*}$args]"
+        #    # TODO: Why is passing -childof not working here? 
+        #    $childof nodes set $name [set r [next [list -name $name {*}$args]]]
+        #  }
+        # }
         
       }
       Classifier create Edge {
@@ -2206,15 +2228,20 @@ leaf: Num         <- Sign? Digit+                      			       ;
 
   set dotGrammar [Grammar newFromScript {
     OPEG Dot (G)
-    #// gpl1 //  
+    #// gpl3Node //  
     G           <- `Graph` GRAPH OBRACKET StmtList CBRACKET;
     StmtList    <- (Stmt SCOLON)*;
     Stmt        <- edges:EdgeStmt / NodeStmt;
-    EdgeStmt    <- `Edge` a:(`$root nodes $0` NodeID) EDGEOP b:(`$root nodes $0` NodeID);
+    #// end //  
+    #// gpl2Node //  
+    EdgeStmt    <- `Edge` a:(`$root nodes $0` NodeID) EDGEOP
+                          b:(`$root nodes $0` NodeID);
+    #// end //  
+    #// gpl1Node //  
     NodeStmt    <- `Node` name:NodeID;
     NodeID      <- QUOTE Id QUOTE;
     Id          <- !QUOTE (<space>/<alnum>)+;
-    #// end //  
+    #// end //
     void:  QUOTE    <- '\"';
     void:  EDGEOP   <- WS '--' WS ;
     void:  NODE     <- WS 'node' WS ;
@@ -2229,7 +2256,8 @@ leaf: Num         <- Sign? Digit+                      			       ;
     END;
   }]
 
-  set lmf [LanguageModelFactory new -lm [namespace current]::Graphs::Graph]
+  set lmf [LanguageModelFactory new \
+               -lm [namespace current]::Graphs::Graph]
   
   set dotParser [$dotGrammar new -factory $lmf]
   set str {
@@ -2249,7 +2277,146 @@ leaf: Num         <- Sign? Digit+                      			       ;
   ? {$graph info class} ::Graphs::Graph
   ? {llength [$graph edges get]} 2
   ? {llength [$graph nodes get]} 3
+
+  set str2 {
+    #// dot2 //
+    graph {
+      // node definitions
+      "1st Edition";
+      "2nd Edition";
+      "3rd Edition";
+      // edge definitions
+      "1st Edition" -- "2nd Edition" [weight = 5];
+      "2nd Edition" -- "3rd Edition" [weight = 10];
+    }
+    #// end //
+  }
+
+  regsub -all -line {^\s*#//.*//\s*$} $str2 {} str2
+
+  set extDotGrammar {
+    #// gplWeighted1 //  
+    EdgeStmt    <- `Edge` a:(`$root nodes $0` NodeID) EDGEOP
+                          b:(`$root nodes $0` NodeID) WeightAttr?;
+    WeightAttr  <- OSQBRACKET WEIGHT EQ weight:Weight CSQBRACKET;
+    Weight      <- `Weight` value:<digit>+;
+    #// end //
+    
+    void: WEIGHT      <- WS 'weight' WS;
+    void: EQ          <- WS '=' WS;
+    void: OSQBRACKET  <- WS '\[' WS;
+    void: CSQBRACKET  <- WS '\]' WS;
+    void: COMMA       <- WS ',' WS;
+  }
+
+  #// gplExt1 //  
+  Grammar create ExtDot \
+      -start G \
+      -merges $dotGrammar \
+      $extDotGrammar
+  #// end //  
+
+  # TODO: not working
+  # ODot loadRules  $extDotGrammar
   
+  # AttrList    <- OSQBRACKET (Attr COMMA)* CSQBRACKET;
+  # Attr       <- !CSQBRACKET 
+   
+  Composition create WeightedGraphs \
+      -binds Graphs \
+      -base [Graphs::Graph] \
+      -features [Graphs::weighted]
+
+  set lmf [LanguageModelFactory new \
+               -lm [namespace current]::WeightedGraphs::Graph]
+  
+  set oDotParser [ExtDot new -factory $lmf]
+  
+  set wgraph [$oDotParser parse $str2]
+
+  ? {$wgraph info class} ::WeightedGraphs::Graph
+  ? {llength [$wgraph edges get]} 2
+  ? {llength [$wgraph nodes get]} 3
+
+  ? {[lindex [$wgraph edges get] 0] info class} ::WeightedGraphs::Graph::Edge
+  ? {[lindex [$wgraph nodes get] 0] info class} ::WeightedGraphs::Graph::Node
+
+  ? {[[lindex [$wgraph edges get] 0] cget -weight] cget -value} 5
+  ? {[[lindex [$wgraph edges get] 1] cget -weight] cget -value} 10
+
+
+  set oDotGrammar2 [Grammar new -name ODot2 -start G -merges $dotGrammar {
+    #// gplWeighted2a //
+    # a) receiving rules
+    EdgeStmt    <- `Edge` CoreEdge WeightAttr ;
+    WeightAttr  <- OSQBRACKET WEIGHT EQ weight:Weight CSQBRACKET;
+    Weight      <- `Weight` value:<digit>+;
+    #// end //
+    
+    void: WEIGHT      <- WS 'weight' WS;
+    void: EQ          <- WS '=' WS;
+    void: OSQBRACKET  <- WS '\[' WS;
+    void: CSQBRACKET  <- WS '\]' WS;
+    void: COMMA       <- WS ',' WS;
+  } {
+    #// gplWeighted2b //
+    # b) transforms
+    CoreEdge      <-> Dot::EdgeStmt
+    G             <*> Dot::G
+    {EdgeStmt end} ==>
+    #// end //
+  }]
+
+  # TODO: early deletion not working. why?
+  #
+  # CoreEdge      <-= Dot::EdgeStmt
+  # Dot::EdgeStmt ==>
+  # G             <*> Dot::G
+
+  set lmf [LanguageModelFactory new \
+               -lm [namespace current]::WeightedGraphs::Graph]
+
+  
+  set oDotParser2 [$oDotGrammar2 new -factory $lmf]
+  set wgraph2 [$oDotParser2 parse $str2]
+
+  ? {$wgraph2 info class} ::WeightedGraphs::Graph
+  ? {llength [$wgraph2 edges get]} 2
+  ? {llength [$wgraph2 nodes get]} 3
+
+  ? {[lindex [$wgraph2 edges get] 0] info class} ::WeightedGraphs::Graph::Edge
+  ? {[lindex [$wgraph2 nodes get] 0] info class} ::WeightedGraphs::Graph::Node
+
+  ? {[[lindex [$wgraph2 edges get] 0] cget -weight] cget -value} 5
+  ? {[[lindex [$wgraph2 edges get] 1] cget -weight] cget -value} 10
+
+  #
+  # Allow for mixed graphs ...
+  #
+ 
+  $oDotGrammar2 loadTransforms {
+    CoreEdge      <-> Dot::EdgeStmt
+    G             <*> Dot::G
+    # {EdgeStmt end} ==>
+  }
+
+  set lmf [LanguageModelFactory new \
+               -lm [namespace current]::WeightedGraphs::Graph]
+
+  set oDotParser3 [$oDotGrammar2 new -factory $lmf]
+
+  set wgraph3 [$oDotParser3 parse {
+    graph {
+      // node definitions
+      "1st Edition";
+      "2nd Edition";
+      "3rd Edition";
+      // edge definitions
+      "1st Edition" -- "2nd Edition";
+      "2nd Edition" -- "3rd Edition" [weight = 2];
+    }
+  }]
+
   #
   # == Debugging
   #
@@ -2269,7 +2436,7 @@ leaf: Num         <- Sign? Digit+                      			       ;
   # 
 
   #
-  # Excursus: 
+  # === Plain parsing grammar: w/o generators, with custom factory
   #
 
   set dotPeg [Grammar newFromScript {
@@ -2332,10 +2499,74 @@ leaf: Num         <- Sign? Digit+                      			       ;
                                  nodes {{1st Edition} {2nd Edition} {3rd Edition}} \
                                  edges {{{1st Edition} {2nd Edition}} {{2nd Edition} {3rd Edition}}}]
 
-  # Grammar new -start G -name ODot {
-  # 
-  #}
+  #
+  # === Anticipated extension
+  #
 
+  set extensibleDotGrm [Grammar newFromScript {
+    OPEG Dot (G)
+    G           <- `Graph` GRAPH OBRACKET StmtList CBRACKET;
+    StmtList    <- (Stmt SCOLON)*;
+    Stmt        <- edges:EdgeStmt / NodeStmt;
+    #// proactive1 //
+    EdgeStmt    <- `Edge` a:(`$root nodes $0` NodeID) EDGEOP
+                          b:(`$root nodes $0` NodeID) AttrList?;
+    AttrList    <- OSQBRACKET Attr (SCOLON Attr)* CSQBRACKET;
+    #// end //
+    NodeStmt    <- `Node` name:NodeID;
+    NodeID      <- QUOTE Id QUOTE;
+    Id          <- !QUOTE (<space>/<alnum>)+;
+
+    AttrList    <- OSQBRACKET Attr (SCOLON Attr)* CSQBRACKET;
+    
+    void:  QUOTE    <- '\"';
+    void:  EDGEOP   <- WS '--' WS ;
+    void:  NODE     <- WS 'node' WS ;
+    void:  GRAPH    <- WS 'graph' WS ;
+    void:  OBRACKET <- WS '{' WS ;
+    void:  CBRACKET <- WS '}' WS;
+    void:  SCOLON   <- WS ';' WS;
+    void:  WS       <- (COMMENT / <space>)*;
+    void:  COMMENT  <- '//' (!EOL .)* EOL ;
+    void:  EOL      <- '\n' / '\r' ;
+
+    END;
+  }]
+
+  set oDotGrammar3 [Grammar new -name ODot3 -start G -merges $extensibleDotGrm {
+    #// proactive2a //
+    # a) receiving rules
+    Attr        <-  weight:Weight ;
+    Weight      <- `Weight` WEIGHT EQ value:<digit>+;
+    #// end //
+    
+    void: WEIGHT      <- WS 'weight' WS;
+    void: EQ          <- WS '=' WS;
+    void: OSQBRACKET  <- WS '\[' WS;
+    void: CSQBRACKET  <- WS '\]' WS;
+  } {
+    #// proactive2b //
+    # b) transforms
+    G             <*> Dot::G
+    #// end //
+  }]
+
+  set lmf [LanguageModelFactory new \
+               -lm [namespace current]::WeightedGraphs::Graph]
+
+  
+  set oDotParser3 [$oDotGrammar3 new -factory $lmf]
+  set wgraph3 [$oDotParser3 parse $str2]
+
+  ? {$wgraph3 info class} ::WeightedGraphs::Graph
+  ? {llength [$wgraph3 edges get]} 2
+  ? {llength [$wgraph3 nodes get]} 3
+
+  ? {[lindex [$wgraph3 edges get] 0] info class} ::WeightedGraphs::Graph::Edge
+  ? {[lindex [$wgraph3 nodes get] 0] info class} ::WeightedGraphs::Graph::Node
+
+  ? {[[lindex [$wgraph3 edges get] 0] cget -weight] cget -value} 5
+  ? {[[lindex [$wgraph3 edges get] 1] cget -weight] cget -value} 10
   
   # TODO: is this also working?
   # set g2 {
