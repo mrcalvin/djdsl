@@ -1819,7 +1819,7 @@ apply {{version code {test ""}} {
   # rules.
   #
   
-  set grammar [Grammar new -name MissGrants -start M {
+  set grammar [Grammar create MissGrants -start M {
 #// mgc4 //
       M  <- `StateMachine` START start:<alnum>+ states:S+ ;
       S  <- `State` STATE name:<alnum>+ transitions:T* ;
@@ -2416,6 +2416,191 @@ leaf: Num         <- Sign? Digit+                      			       ;
       "2nd Edition" -- "3rd Edition" [weight = 2];
     }
   }]
+  
+  #
+  # == DSL unification
+  #
+  # === Abstract syntax
+  #
+  
+  Asset create Expressions {
+    LanguageModel create Model {
+      Classifier create Expression
+      Classifier create BooleanOrComparison -superclasses Expression {
+        :property operator:required; # =, <>, >=, <=, >, <, &&, ||
+        :property leftExpr:object,type=Expression,required
+        :property rightExpr:object,type=Expression,required
+      }
+      
+      Classifier create Atomic -superclasses Expression
+      Classifier create Number -superclasses Atomic {
+        :property -accessor public value:double,required
+      }
+      Classifier create VariableRef -superclasses Atomic {
+        :property -accessor public variableName:alnum,required
+      }
+    }; # Model
+    
+    Collaboration create Eval {
+      Role create BooleanOrComparison {
+        :public method evaluate {context} {
+          tcl::mathop::${:operator} [${:leftExpr} evaluate $context] \
+              [${:rightExpr} evaluate $context]
+          
+        }
+      }
+      Role create Number {
+        :public method evaluate {context} {
+          return ${:value}
+        }
+      }
+      Role create VariableRef {
+        :public method evaluate {context} {
+          dict with context {
+            set ${:variableName}
+          }
+        }
+      }
+    }; # Eval
+  }; # Expressions
+  
+  Asset create Behaviours {
+    LanguageModel create StateMachine {
+      :property -accessor public start; # object,type=StateMachine::State
+      :property -accessor public states:object,type=StateMachine::State,1..*
+      
+      Classifier create State {
+        :property -accessor public name
+        :property -accessor public actions:0..*,object,type=Command
+        
+        :property -accessor public transitions:object,type=Transition,0..* {
+          :public object method value=isSet {obj prop} {
+            ::nsf::var::exists $obj $prop
+          }
+        }
+      }
+        
+      Classifier create Transition {
+        :property -accessor public source; # object,type=State
+        :property -accessor public target; # object,type=State
+        :property -accessor public trigger; # object,type=Event
+      }
+      
+      Classifier create AbstractEvent {
+        :property -accessor public name
+        :property -accessor public code:alnum
+      }
+      
+      Classifier create Event -superclasses AbstractEvent
+      Classifier create Command -superclasses AbstractEvent
+    }; # StateMachine
+  }; # Behaviours
+  
+  set StateMachine [Behaviours info children -type LanguageModel]
+  
+  Composition create EvaluableExpr \
+      -binds Expressions \
+      -base [Expressions::Model] \
+      -features [Expressions::Eval]
+  
+  # === Concrete syntax
+  #
+  # For Miss Grant's controller, the previouly defined OPEG is reused
+  # as-is. For BCEL, the following OPEG will be used:
+  #
+  # operator:NotOp leftExpr:Term /
+  # =, <>, >=, <=, >, <, &&, ||
+  Grammar create BCEL -start Expression {
+    #// bcel1 //
+    Expression     		<- `BooleanOrComparison` leftExpr:Term BinaryOp rightExpr:Term;
+    Term		 	<-  Variable / OPARENS Expression CPARENS;
+    BinaryOp 		        <-  WS operator:('||' / '&&' / '=' / '<>' / '>=' / '<=' / '>' / '<') WS;
+    leaf: NotOp 		<-  WS operator:'-' WS;
+    Variable 		        <- `VariableRef` variableName:<alnum>+;
+    void: OPARENS 		<- WS '(' WS;
+    void: CPARENS 		<- WS ')' WS;
+    void: WS		        <- <space>*;
+    #// end //
+  }
+
+  set lmf [LanguageModelFactory new \
+               -lm [namespace current]::Expressions::Model]
+  
+  set bcelParser [BCEL new -factory $lmf]
+  set expr [$bcelParser parse {(counter > 3) && (counter < 10)}]
+  
+  ? {$expr info class} ::Expressions::Model::BooleanOrComparison
+    ? {$expr cget -operator} "&&"
+
+  Asset create GuardedBehaviours {
+    Collaboration create StateMachine {
+      Role create Transition {
+        :property -accessor public guard:object;# ,type=EvaluableExpr::Model::Expression
+      }
+    }
+  }
+    
+  Composition create GuardableStateMachine \
+      -binds {Behaviours Expressions} \
+      -base $StateMachine \
+      -features [list [GuardedBehaviours::StateMachine] [namespace current]::EvaluableExpr::Model]
+  
+
+   set grammar [Grammar create MissGrants2 -start M {
+     M  <- `StateMachine` START start:<alnum>+ states:S+ ;
+     S  <- `State` STATE name:<alnum>+ transitions:T* ;
+     T  <- `Transition` trigger:E GO target:<alnum>+ WS;
+     E  <- `Event` ON name:<alnum>+ ;
+void: ON <- WS 'on' WS;
+void: START <- WS 'start' WS;
+void: STATE <- WS 'state' WS;
+void: GO <- WS 'go' WS;
+void: WS <- <space>*;
+  }]
+  
+
+# TODO: Why GuardedMGC//WS <- / {* space} {* space} {* space} {* space} {* space}?
+
+  
+  set unifiedGrm [Grammar new -name GuardedMGC -start GM -merges [list [namespace current]::BCEL [namespace current]::MissGrants2] {
+    T  <- `Transition` OrigT OBRACKET guard:Expression CBRACKET;
+    void: OBRACKET <- WS '\[' WS;
+    void: CBRACKET <- WS '\]' WS;
+    void: IF <- WS 'if';
+  } {
+    OrigT      <->  MissGrants2::T
+    Expression <==  BCEL::Expression
+    GM         <*>  MissGrants2::M
+    # {T end}    ==>
+  }]
+  
+  set input {
+    start idle
+      
+    state idle
+    on doorClosed go active
+    
+    state active
+       on lightOn go waitingForDrawer
+       on drawerOpened go waitingForLight [counter > 3]
+
+    state waitingForDrawer
+       on drawerOpened go unlockedPanel
+
+    state unlockedPanel
+       on panelClosed go idle
+      
+    state waitingForLight
+  }
+  
+  set lmf [LanguageModelFactory new \
+               -lm [namespace current]::GuardableStateMachine::StateMachine]
+  
+  set unifiedParser [$unifiedGrm new -factory $lmf]
+  set gSm [$unifiedParser parse $input]
+  ? {$gSm info class} ::GuardableStateMachine::StateMachine
+  ? {llength [lmap t [$gSm info children -type GuardableStateMachine::StateMachine::Transition] {if {![$t eval {info exists :guard}]} {continue}}]} 1
+    
 
   #
   # == Debugging
