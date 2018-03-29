@@ -107,7 +107,7 @@ apply {{version code {test ""}} {
       # Create accessors for the collaboration parts
       set name [namespace tail $nested]
       :public method "new [string tolower $name]" args \
-          [subst {[self]::$name new -childof \[self\] {*}\$args}]
+          [subst {if {\[:info lookup method mk$name\] ne ""} {:mk$name [self]::$name {*}\$args} else {[self]::$name new -childof \[self\] {*}\$args}}]
     }
   }
 
