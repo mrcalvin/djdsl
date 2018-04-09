@@ -14,6 +14,15 @@ package ifneeded djdsl::opeg 0.1 {
   source opeg.tcl
 }
 
+package ifneeded djdsl::dada 0.1 {
+  source dada.tcl
+}
+
+package ifneeded djdsl::examples::models 0.1 {
+  source [file join examples models.tcl]
+}
+
+
 
 # Local variables:
 #    mode: tcl
