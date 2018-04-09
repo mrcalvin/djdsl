@@ -413,6 +413,12 @@ apply {{version code {test ""}} {
 
     :public method qualify {rules} {
       set all [dict keys $rules]
+
+      # Already qualified; TODO: make check more robust!
+      if {[namespace tail [lindex $all 0]] ne  [lindex $all 0]} {
+        return $rules
+      }
+      
       if {[info exists :accessed]} {
         lappend all {*}[concat {*}${:accessed}]
       }
@@ -712,10 +718,17 @@ apply {{version code {test ""}} {
 
     :public forward "TRANSFORM <-=" %self import 
     
-    :public method import {-gtors:switch -rewrite:switch -cascade:switch tgt src {position end}} {
+    :public method import {-gtors:switch
+                           -rewrite:switch
+                           -cascade:switch
+                           -reentered:switch
+                           tgt
+                           src
+                           {position end}} {
 
       set qTgt ${:name}::$tgt
 
+      puts RULES=[dict keys ${:rules}]
       if {![dict exists ${:rules} $src]} {
         throw [list DJDSL OPEG TRANSFORM NX $src] "The source non-terminal '$src' does not exist."
       }
@@ -723,13 +736,16 @@ apply {{version code {test ""}} {
       set rhs [dict get ${:rules} $src]
 
       set called [pt::pe::op called $rhs]
+      puts CALLED=$called
       if {$rewrite} {
         foreach c $called {
           set qNt ${:name}::[namespace tail $c]
           set rhs [pt::pe::op rename $c $qNt $rhs]
-
+          if {$reentered && [info exists :imported] &&
+              [dict exists ${:imported} $qNt]} {continue}
           if {$cascade && $c ne $src && [dict exists ${:rules} $c]} {
-            :import -rewrite -cascade -gtors [namespace tail $c] $c
+            :import -rewrite -cascade -gtors -reentered [namespace tail $c] $c
+            dict incr :imported $qNt
           }
         }
       }
@@ -774,17 +790,8 @@ apply {{version code {test ""}} {
       }
       # puts SPECS2=${:specs}
 
-      if {0} {
-        # TODO: Is field handling needed?
-        puts CALLED=$called
-        set fields [lsearch -glob -inline -all $called *::_FIELD_*]
-        puts FIELDS=$fields
-        foreach f $fields {
-          # :import [namespace tail $f] $f
-          foreach c [pt::pe::op called [dict get ${:rules} $f]] {
-            # :import [namespace tail $c] $c
-          }
-        }
+      if {$cascade && !$reentered} {
+        unset -nocomplain :imported
       }
       
       return
@@ -841,14 +848,16 @@ apply {{version code {test ""}} {
 
       lassign [:unqualify2 ${:rules} ${:all}] rules ntMap
 
+      puts ">>>>>>>"
       dict for {nt rhs} $rules {
         dict set rules $nt [list is $rhs mode [dict get ${:modes} [dict get $ntMap $nt]]]
-        # puts "$nt <- $rhs"
+        puts "$nt <- $rhs"
       }
+      puts "<<<<<<<"
       set peg [list pt::grammar::peg [list rules $rules start [list n [string map {:: //} ${:start}]]]]
-
-      pt::peg verify-as-canonical $peg
       
+      pt::peg verify-as-canonical $peg
+      puts SPEC=${:specs}
       return $peg
     }
 
@@ -909,9 +918,13 @@ apply {{version code {test ""}} {
       # puts includes=([self])=$includes
       foreach extra $includes {
         if {![$extra info has type [current class]]} continue;
-        set extraRules [$extra rules get]
-        if {[info exists :transforms]} {
-          set extraRules [$extra qualify $extraRules]
+        if {[$extra eval {info exists :rules}]} {
+          set extraRules [$extra rules get]
+          if {[info exists :transforms]} {
+            set extraRules [$extra qualify $extraRules]
+          }
+        } else {
+          continue
         }
         set rules [dict merge $rules $extraRules]
         if {[$extra eval {info exists :terminals}]} {
@@ -927,6 +940,8 @@ apply {{version code {test ""}} {
         set m [$extra eval {set :modes}] 
         if {[info exists :transforms]} {
           dict for {k v} $m {
+            # TODO: avoid duplicate qualification (relocate/ centralise this!)
+            if {[namespace tail $k] ne $k} {break;}
             dict set m [$extra name get]::$k $v
             dict unset m $k
           }
@@ -937,6 +952,8 @@ apply {{version code {test ""}} {
           set s [$extra eval {set :specs}]
           if {[info exists :transforms]} {
             dict for {k v} $s {
+              # TODO: avoid duplicate qualification (relocate/ centralise this!)
+              if {[namespace tail $k] ne $k} {break;}
               dict set s [$extra name get]::$k $v
               dict unset s $k
             }
@@ -1446,9 +1463,9 @@ apply {{version code {test ""}} {
     :variable sourcecode
     :variable callingNamespace
     
-    :public method generate {generator asgmts} {
+    :public method generate {nt generator asgmts} {
       
-      # puts stderr GENERATE=|[list $generator new {*}$asgmts]|$asgmts|
+      puts stderr GENERATE=|[list $generator new {*}$asgmts]|$asgmts|
       namespace eval ${:callingNamespace} [list $generator new {*}$asgmts]
     }
 
@@ -1561,7 +1578,7 @@ apply {{version code {test ""}} {
           dict with objspec {      
             if {[info exists generator]} {
               # puts stderr "$generator new {*}$flds"
-              set :current [:generate $generator $flds]
+              set :current [:generate $nt $generator $flds]
               set flds [list]
               if {[llength $fixes]} {
                 lappend :fixes ${:current} $fixes
@@ -1621,12 +1638,13 @@ apply {{version code {test ""}} {
       set asset [namespace qualifiers ${:lm}]
       set :context [$asset new [string tolower [namespace tail ${:lm}]]]
     }
-    :public method generate {generator asgmt} {
+    :public method generate {nt generator asgmt} {
+      # puts stderr "GEN=[namespace tail [${:context} info class]] ne $generator"
       if {[namespace tail [${:context} info class]] ne $generator} {
         # puts stderr "${:context} new [string tolower $generator] {*}$asgmt"
         ${:context} new [string tolower $generator] {*}$asgmt
       } else {
-        if {[llength asgmt]} {
+        if {[llength $asgmt]} {
           ${:context} configure {*}$asgmt
         }
         return ${:context}
@@ -1649,7 +1667,7 @@ apply {{version code {test ""}} {
       set factory [[:info class] factory get]
       $factory eval [list set :sourcecode $script]
       $factory eval [list set :callingNamespace $ns]
-      # puts ast=$ast
+      puts ast=$ast
       $factory postOrder v $ast {
         if {$v ne "" && [::nsf::object::exists $v]} {
           lappend list $v
@@ -2561,28 +2579,40 @@ void: WS <- <space>*;
 
 # TODO: Why GuardedMGC//WS <- / {* space} {* space} {* space} {* space} {* space}?
 
+  set BCEL [namespace current]::BCEL
+  set MissGrants [namespace current]::MissGrants2
   
-  set unifiedGrm [Grammar new -name GuardedMGC -start GM -merges [list [namespace current]::BCEL [namespace current]::MissGrants2] {
-    T  <- `Transition` OrigT OBRACKET guard:Expression CBRACKET;
+  Grammar create GuardedMGC \
+      -start GM \
+      -merges [list $BCEL $MissGrants] \
+      {
+    #// gMgc2a //
+    # a) receiving rules
+                 T <- `Transition` OrigT OBRACKET guard:Expression CBRACKET;
     void: OBRACKET <- WS '\[' WS;
     void: CBRACKET <- WS '\]' WS;
-    void: IF <- WS 'if';
-  } {
-    OrigT      <->  MissGrants2::T
-    Expression <==  BCEL::Expression
-    GM         <*>  MissGrants2::M
-    # {T end}    ==>
-  }]
-  
+    #// end //      
+} {
+  #// gMgc2b //
+  # b) transforms
+  OrigT      <->  MissGrants2::T
+  Expression <==  BCEL::Expression
+  GM         <*>  MissGrants2::M
+  #// end //
+  # {T end}    ==>
+}
+
   set input {
     start idle
       
     state idle
-    on doorClosed go active
-    
-    state active
-       on lightOn go waitingForDrawer
-       on drawerOpened go waitingForLight [counter > 3]
+       on doorClosed go active
+    #// gMgc1 //
+state active
+  on lightOn go waitingForDrawer
+  on drawerOpened go waitingForLight
+     [ counter > 3 ] 
+    #// end //
 
     state waitingForDrawer
        on drawerOpened go unlockedPanel
@@ -2592,16 +2622,287 @@ void: WS <- <space>*;
       
     state waitingForLight
   }
+
+  regsub -all -line {^\s*#//.*//\s*$} $input {} input
   
   set lmf [LanguageModelFactory new \
                -lm [namespace current]::GuardableStateMachine::StateMachine]
   
-  set unifiedParser [$unifiedGrm new -factory $lmf]
+  set unifiedParser [GuardedMGC new -factory $lmf]
   set gSm [$unifiedParser parse $input]
-  ? {$gSm info class} ::GuardableStateMachine::StateMachine
-  ? {llength [lmap t [$gSm info children -type GuardableStateMachine::StateMachine::Transition] {if {![$t eval {info exists :guard}]} {continue}}]} 1
-    
 
+  
+  ? {$gSm info class} ::GuardableStateMachine::StateMachine
+  set transitions [$gSm info children \
+                       -type GuardableStateMachine::StateMachine::Transition]
+  ? {llength $transitions} 5
+  ? {llength [lmap t $transitions {if {![$t eval {info exists :guard}]} {continue}}]} 1
+
+
+  #
+  # == Extension composition
+
+  #
+  # Abstract syntax
+  #
+
+  Asset create Colours {
+    Collaboration create coloured {
+      Classifier create Colour {
+        :property -accessor public {value "#fff"}
+      }
+      Role create Edge {
+        :property -accessor public \
+            colour:object,type=Colour;# ,required
+      }
+    }
+  }; # Colours
+  
+  Composition create MultiFeatGraph \
+      -binds {Graphs Colours} \
+      -base [Graphs::Graph] \
+      -features [list [Colours::coloured] [Graphs::weighted]]
+
+
+  #
+  # === Incremental: (base < extension1) < extension2
+  #
+
+  set cwDotGrammar [Grammar new -name OColDot -start G -merges [$oDotGrammar2 resulting] {
+    #// gplColoured1a //
+    # a) receiving rules
+    EdgeStmt    <- `Edge` CoreEdge ColourAttr ;
+    ColourAttr  <- OSQBRACKET COLOUR EQ colour:Colour CSQBRACKET;
+    Colour      <- `Colour` value:('#' <xdigit> <xdigit> <xdigit>);
+    #// end //
+ void: COLOUR <- WS 'colour' WS;
+  } {
+    #// gplColoured1b //
+    # b) transforms
+    G             <*> ODot2::G
+    #// end //
+  }]
+
+  set lmf [LanguageModelFactory new \
+               -lm [MultiFeatGraph::Graph]]
+  
+  set cwDotParser [$cwDotGrammar new -factory $lmf]
+  
+  set str3 {
+    #// dot3 //
+    graph {
+      // node definitions
+      "1st Edition";
+      "2nd Edition";
+      "3rd Edition";
+      // edge definitions
+      "1st Edition" -- "2nd Edition" [weight = 5];
+      "2nd Edition" -- "3rd Edition" [colour = #000];
+    }
+    #// end //
+  }
+
+  regsub -all -line {^\s*#//.*//\s*$} $str3 {} str3
+  
+  set cwgraph [$cwDotParser parse $str3]
+
+  ? {$cwgraph info class} ::MultiFeatGraph::Graph
+  ? {llength [$cwgraph edges get]} 2
+  ? {llength [$cwgraph nodes get]} 3
+
+  ? {[lindex [$cwgraph edges get] 0] info class} ::MultiFeatGraph::Graph::Edge
+  ? {[lindex [$cwgraph nodes get] 0] info class} ::MultiFeatGraph::Graph::Node
+
+  ? {[[lindex [$cwgraph edges get] 0] cget -weight] cget -value} 5
+  ? {[[lindex [$cwgraph edges get] 1] cget -colour] cget -value} #000
+
+  # === Unification (1): base < (extension1 < extension2) (no derivative)
+
+  set weightedGrmStr {
+    #// gplUnified1a //
+    # rules
+    EdgeStmt   <- `Edge` CoreEdge
+                  WeightAttr ;
+    WeightAttr <- OSQBRACKET WEIGHT
+                  EQ weight:Weight
+                  CSQBRACKET;
+    Weight     <- `Weight`
+                   value:<digit>+;
+    # deferred
+    CoreEdge   <- '';
+    void: WS   <- '';
+    #// end //
+    void: WEIGHT      <- WS 'weight' WS;
+    void: EQ          <- WS '=' WS;
+    void: OSQBRACKET  <- WS '\[' WS;
+    void: CSQBRACKET  <- WS '\]' WS;
+  } 
+  
+  set colouredGrmStr {
+    #// gplUnified2a //
+    # rules
+    EdgeStmt   <- `Edge` CoreEdge
+                  ColourAttr ;
+    ColourAttr <- OSQBRACKET COLOUR
+                  EQ colour:Colour
+                  CSQBRACKET;
+    Colour     <- `Colour` value:('#'
+                              <xdigit>
+                              <xdigit>
+                              <xdigit>);
+    # deferred 
+    CoreEdge    <- '';
+    void: WS    <- '';
+    #// end //
+    void: COLOUR <- WS 'colour' WS;
+    void: EQ          <- WS '=' WS;
+    void: OSQBRACKET  <- WS '\[' WS;
+    void: CSQBRACKET  <- WS '\]' WS;
+  }
+
+
+  #// gplUnified3 //
+  # 1) weighted extension
+  Grammar create WeightedExtGrm \
+      -start EdgeStmt $weightedGrmStr
+
+  # 2) coloured + weighted extension (= unified extension)
+  Grammar create ColouredWeightedExtGrm \
+      -start EdgeStmt \
+      -merges [WeightedExtGrm] $colouredGrmStr {
+        EdgeStmt <*> WeightedExtGrm::EdgeStmt
+      }
+
+  # 3) base + unified extension
+  Grammar create FinalGrm \
+      -start G \
+      -merges [list [ColouredWeightedExtGrm resulting] $dotGrammar] {} {
+        # transforms
+        ColouredWeightedExtGrm::WS ==>
+        ColouredWeightedExtGrm::CoreEdge ==>
+        CoreEdge <-> Dot::EdgeStmt
+        EdgeStmt <*> ColouredWeightedExtGrm::EdgeStmt
+        G <*> Dot::G
+      }
+  #// end //
+
+  set lmf [LanguageModelFactory new \
+               -lm [MultiFeatGraph::Graph]]
+  
+  set finalParser [FinalGrm new -factory $lmf]
+  set cwgraph2 [$finalParser parse $str3]
+
+  ? {$cwgraph2 info class} ::MultiFeatGraph::Graph
+  ? {llength [$cwgraph2 edges get]} 2
+  ? {llength [$cwgraph2 nodes get]} 3
+
+  ? {[lindex [$cwgraph2 edges get] 0] info class} ::MultiFeatGraph::Graph::Edge
+  ? {[lindex [$cwgraph2 nodes get] 0] info class} ::MultiFeatGraph::Graph::Node
+
+  ? {[[lindex [$cwgraph2 edges get] 0] cget -weight] cget -value} 5
+  ? {[[lindex [$cwgraph2 edges get] 1] cget -colour] cget -value} #000
+
+  # === Unification (2): base < (extension1 < extension2) (DERIVATIVE)
+
+  #// gplDerivative1 //
+  # 1) G1: weighted extension
+  Grammar create WeightedExtGrm \
+      -start EdgeStmt $weightedGrmStr
+
+  # 2) G2: coloured extension
+  Grammar create ColouredExtGrm \
+      -start EdgeStmt $colouredGrmStr
+
+  # 3) G3: derivative grammar
+  Grammar create ColouredWeightedDerivGrm \
+      -start EdgeStmt -merges [list [WeightedExtGrm] [ColouredExtGrm]] {
+         # receiving rules
+        EdgeStmt    <- `Edge` CoreEdge AttrList;
+        AttrList    <- OSQBRACKET Attr (SCOLON Attr)* CSQBRACKET;
+        Attr        <- COLOUR EQ colour:Colour / WEIGHT EQ weight:Weight;
+  void: SCOLON      <- WS ';' WS;
+  void: CoreEdge     <- '';
+      } {
+        # transforms
+        WeightedExtGrm::EdgeStmt ==>;
+        ColouredExtGrm::EdgeStmt ==>;
+        WeightAttr <*> WeightedExtGrm::WeightAttr;
+        ColourAttr <*> ColouredExtGrm::ColourAttr;
+      }
+
+  # 4) G4: base + derivative extension 
+  Grammar create FinalGrm2 \
+      -start G \
+      -merges [list [ColouredWeightedDerivGrm resulting] $dotGrammar] {} {
+        ColouredWeightedDerivGrm::WS ==>
+        ColouredWeightedDerivGrm::CoreEdge ==>
+        CoreEdge <-> Dot::EdgeStmt
+        EdgeStmt <*> ColouredWeightedDerivGrm::EdgeStmt
+        G <*> Dot::G
+      }
+  #// end //
+
+  set lmf [LanguageModelFactory new \
+               -lm [MultiFeatGraph::Graph]]
+  
+  set finalParser [FinalGrm2 new -factory $lmf]
+  set cwgraph3 [$finalParser parse $str3]
+
+  ? {$cwgraph3 info class} ::MultiFeatGraph::Graph
+  ? {llength [$cwgraph3 edges get]} 2
+  ? {llength [$cwgraph3 nodes get]} 3
+
+  ? {[lindex [$cwgraph3 edges get] 0] info class} ::MultiFeatGraph::Graph::Edge
+  ? {[lindex [$cwgraph3 nodes get] 0] info class} ::MultiFeatGraph::Graph::Node
+
+  ? {[[lindex [$cwgraph3 edges get] 0] cget -weight] cget -value} 5
+  ? {[[lindex [$cwgraph3 edges get] 1] cget -colour] cget -value} #000
+
+  set str4 {
+    #// dot4 //
+    graph {
+      // node definitions
+      "1st Edition";
+      "2nd Edition";
+      "3rd Edition";
+      // edge definitions
+      "1st Edition" -- "2nd Edition" [weight = 5; colour = #eee];
+      "2nd Edition" -- "3rd Edition" [colour = #000];
+      "1st Edition" -- "3rd Edition" ;
+    }
+    #// end //
+  }
+
+  regsub -all -line {^\s*#//.*//\s*$} $str4 {} str4
+
+  set lmf [LanguageModelFactory new \
+               -lm [MultiFeatGraph::Graph]]
+  
+  set finalParser [FinalGrm2 new -factory $lmf]
+  
+  set cwgraph4 [$finalParser parse $str4]
+
+  ? {$cwgraph4 info class} ::MultiFeatGraph::Graph
+  ? {llength [$cwgraph4 edges get]} 3
+  ? {llength [$cwgraph4 nodes get]} 3
+
+  ? {[lindex [$cwgraph4 edges get] end] info class} ::MultiFeatGraph::Graph::Edge
+  ? {[lindex [$cwgraph4 nodes get] end] info class} ::MultiFeatGraph::Graph::Node
+
+  ? {[[lindex [$cwgraph4 edges get] 0] cget -weight] cget -value} 5
+  ? {[[lindex [$cwgraph4 edges get] 0] cget -colour] cget -value} #eee
+  ? {[[lindex [$cwgraph3 edges get] 1] cget -colour] cget -value} #000
+
+  Grammar create G -start S {
+    S <- 'a' &'b';
+    D <- 'a' !'e';
+  }
+  puts ----[G rules get]
+
+}
+
+  
+  
   #
   # == Debugging
   #
