@@ -106,8 +106,16 @@ apply {{version code {test ""}} {
     :public method createFactory {nested:class} {
       # Create accessors for the collaboration parts
       set name [namespace tail $nested]
+      set self [self]::$name
+      set vargs [string cat "{*}" $ args]
       :public method "new [string tolower $name]" args \
-          [subst {if {\[:info lookup method mk$name\] ne ""} {:mk$name [self]::$name {*}\$args} else {[self]::$name new -childof \[self\] {*}\$args}}]
+          [subst -nocommands {
+            if {[:info lookup method mk$name] ne ""} {
+              :mk$name $self $vargs
+            } else {
+              $self new -childof [self] $vargs
+            }
+          }]
     }
   }
 

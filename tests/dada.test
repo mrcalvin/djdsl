@@ -1,0 +1,213 @@
+package require tcltest
+::tcltest::configure {*}$argv
+
+package require djdsl::dada
+
+
+
+namespace eval ::djdsl::dada::test {
+  namespace import ::tcltest::*
+  namespace import ::djdsl::dada::*
+  
+  variable SETUP {
+    
+  }
+
+  
+  variable CLEANUP {
+    if {[array exists {}]} {
+      foreach k [array names {}] {
+        set v [set ($k)]
+        foreach i $v {
+          if {[::nsf::is object $i]} {
+            $i destroy
+          }
+        }
+      }
+      array unset {}
+      unset -nocomplain k
+      unset -nocomplain v
+    }
+    foreach b [Builder info instances -closure] {
+      $b destroy
+    }
+    unset -nocomplain b
+  }
+
+  test dada-0.1 "Builder creation" -setup $SETUP -body {
+
+
+    nx::Class create ComputerBuilder -superclasses Builder {
+      :public method "<- test" {a} {
+        return test-$a
+      }
+    }
+    ComputerBuilder create ::cb -interp [ExprInterp new]
+    lappend () [::cb get {test(1)}]
+   
+
+  } -cleanup $CLEANUP -result "test-1"
+  
+  test dada-0.2 "Builder chaining" -setup $SETUP -body {
+    
+    nx::Class create ComputerBuilder -superclasses [Builder] {
+      :public method "<- test" {a} {
+        return test-$a
+      }
+    }
+
+    nx::Class create ExtraBuilder -superclasses [Builder] {
+      :public method "<- test" {a} {
+        return test-$a-[next [list [incr a]]]
+      }
+    }
+    
+    ComputerBuilder create ::cb -interp [ExprInterp new]
+    lappend () [::cb get {test(1)}]
+    # ::cb object mixins add ExtraBuilder
+    ::cb predecessors add [ExtraBuilder]
+    lappend () [::cb get {test(1)}]
+    
+    
+  } -cleanup $CLEANUP -result "test-1 test-1-test-2"
+
+  test dada-0.3 "Builder chaining: extension provider" -setup $SETUP -body {
+    
+    nx::Class create ComputerBuilder -superclasses [Builder] {
+      :public method "<- test" {a} {
+        return test-$a
+      }
+    }
+
+    nx::Class create ExtraBuilder -superclasses [Builder] {
+      :public method "<- extra" {a} {
+        return extra-$a; # next
+      }
+    }
+    
+    ComputerBuilder create ::cb -interp [ExprInterp new]
+    lappend () [::cb get {test(1)}]
+    lappend () [catch {::cb get {extra(1)}}]
+    # ::cb object mixins add ExtraBuilder
+    ::cb predecessors add [ExtraBuilder]
+    lappend () [::cb get {test(1)}]
+    lappend () [catch {::cb get {extra(1)}}]
+    
+    
+  } -cleanup $CLEANUP -result "test-1 1 test-1 0"
+
+
+  #
+  # unknown handling
+  #
+  
+  test dada-0.4 "Builder: unknown handling (dynamic reception)" \
+      -setup $SETUP \
+      -body {
+        
+        nx::Class create ComputerBuilder -superclasses [Builder] {
+          :public method "<- test" {a} {
+            return test-$a
+          }
+          :public method handleUnknown {sub args} {
+            return "NX-$sub-$args"
+          }
+        }
+
+        ComputerBuilder create ::cb -interp [ExprInterp new] {
+          :public object method handleUnknown {sub args} {
+            list NX2-[next]
+          }
+        }
+        lappend () [::cb get {nx(3)}]
+        lappend () [::cb get {test(1)}]
+        
+      } \
+      -cleanup $CLEANUP -result "NX2-NX-tcl::mathfunc::nx-3 test-1"
+
+  test dada-0.5 "Builder: unknown handling under chaining (dynamic reception)" \
+      -setup $SETUP \
+      -body {
+        
+        nx::Class create ComputerBuilder -superclasses [Builder] {
+          # per builder class
+          :public method handleUnknown {sub args} {
+            return "NX-$sub-$args"
+          }
+        }
+        
+        nx::Class create ExtraBuilder -superclasses [Builder] {
+          # per builder extension
+          :public method handleUnknown {sub args} {
+            list NX3-[next]
+          }
+        }
+    
+        ComputerBuilder create ::cb2 -interp [ExprInterp new] {
+          # per builder-instance
+          :public object method handleUnknown {sub args} {
+            list NX2-[next]
+          }
+        }
+          
+        # ::cb2 object mixins add ExtraBuilder
+        ::cb2 predecessors add [ExtraBuilder]
+        
+        lappend () [::cb2 get {nx(3)}]
+        lappend () [::cb2 get {unknown(1)}]
+        
+      } \
+      -cleanup $CLEANUP -result "NX3-NX2-NX-tcl::mathfunc::nx-3 NX3-NX2-NX-tcl::mathfunc::unknown-1"
+
+  test dada-0.6 "Builder: unknown handling under chaining (dynamic reception), empty interp" \
+      -setup $SETUP \
+      -body {
+        
+        nx::Class create ComputerBuilder -superclasses [Builder] {
+          # per builder class
+          :public method handleUnknown {sub args} {
+            return "NX-$sub-$args"
+          }
+        }
+        
+        nx::Class create ExtraBuilder -superclasses [Builder] {
+          # per builder extension
+          :public method handleUnknown {sub args} {
+            list NX3-[next]
+          }
+        }
+    
+        ComputerBuilder create ::cb2 -interp [EmptyInterp new] {
+          # per builder-instance
+          :public object method handleUnknown {sub args} {
+            list NX2-[next]
+          }
+        }
+          
+        # ::cb2 object mixins add ExtraBuilder
+        ::cb2 predecessors add [ExtraBuilder]
+        
+        lappend () [::cb2 get {nx 3}]
+        # TODO: how to spot direct invocation of unknown?
+        # - [info frame],[info level]?
+        # - execute in some ns, so that unknown indirection matches those of ExprInterp?
+        lappend () [::cb2 get {unknown 1}]
+      } \
+      -cleanup $CLEANUP -result "NX3-NX2-NX-nx-3 NX3-NX2-NX-1-"; # TODO: would like to see NX3-NX2-NX-nx-3 NX3-NX2-NX-unknown-1
+  
+  # OTHER TODOS:
+  # - Provide Interp object for collocated calls (so that I don't have
+  #   to check for interp existance or absence)
+  # - UNKNOWN handling for direct unknown calls.
+  # - complete predecessors API
+  # - add successors counterpart, how?
+
+}	
+  
+#
+# Local variables:
+#    mode: tcl
+#    tcl-indent-level: 2
+#    indent-tabs-mode: nil
+# End:
+#
