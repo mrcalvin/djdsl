@@ -80,7 +80,14 @@ apply {{version code {test ""}} {
   #
 
   nx::Class create Builder {
+
+    :public object method create args {
+      throw {DJDSL ABSTRACT} \
+          "Instantiate a concrete subclass of [self]"
+    }
+    
     :property interp:object,type=Interp
+
     :property -accessor public -incremental predecessors:class,0..* {
       :public object method value=add {obj prop pred:class} {
         set r [next]
@@ -112,6 +119,14 @@ apply {{version code {test ""}} {
       :setUnknownHandler
     }
 
+    :public method dispatchUnknown {args} {
+      if {[info exists :interp]} {
+        set args [${:interp} dispatchUnknown {*}$args]
+      }
+      puts stderr "      :handleUnknown {*}$args"
+      :handleUnknown {*}$args
+    }
+    
     :protected method setUnknownHandler {} {
       set slot [:info lookup slots \
                     -type ::nx::EnsembleObject \
@@ -121,7 +136,7 @@ apply {{version code {test ""}} {
           :public method "unknown" {callInfo args} {
             set obj [lindex $callInfo 0]
             set path [lrange $callInfo 1 end]
-            tailcall $obj handleUnknown {*}[lrange $path 1 end] {*}$args
+            tailcall $obj dispatchUnknown {*}[lrange $path 1 end] {*}$args
           }
         }]
         if {[info exists :interp]} {
@@ -129,7 +144,7 @@ apply {{version code {test ""}} {
         }
       } else {
         if {[info exists :interp]} {
-          ${:interp} register [list [self] handleUnknown] ::unknown
+          ${:interp} register [list [self] dispatchUnknown] ::unknown
         }
       }
     }
@@ -179,7 +194,6 @@ apply {{version code {test ""}} {
     }
 
     :protected method reset {} {
-      puts RESET!
       unset -nocomplain :output
     }
   }
@@ -190,6 +204,11 @@ apply {{version code {test ""}} {
 
   nx::Class create Interp {
 
+    :public object method create args {
+      throw {DJDSL ABSTRACT} \
+          "Instantiate a concrete subclass of [self]"
+    }
+
     :property {cmdName:substdefault "[string cat [self]::box]"}
     # :property builder:object,type=Builder
     
@@ -197,9 +216,9 @@ apply {{version code {test ""}} {
       set interpCmd ${:cmdName}
       if {[info commands $interpCmd] eq ""} {
         interp create $interpCmd -safe
-        :beforeClean $interpCmd
+        # :beforeClean $interpCmd
         :clean $interpCmd
-        :afterClean $interpCmd
+        # :afterClean $interpCmd
         # :register $interpCmd
       }
       return $interpCmd
@@ -214,11 +233,15 @@ apply {{version code {test ""}} {
 
     # [interp] construction
 
-    :protected method beforeClean {args} {}
+    # :protected method beforeClean {args} {}
     :protected method clean {args} {}
-    :protected method afterClean {args} {}
+    # :protected method afterClean {args} {}
     
     # public API
+
+    :public method dispatchUnknown {args} {
+      return $args
+    }
 
     :public method register {tgtPrefix srcPrefix} {
       set interpCmd [:require]
@@ -240,18 +263,21 @@ apply {{version code {test ""}} {
     }
   }
 
-  nx::Class create ExprInterp -superclasses Interp {
-    :protected method beforeClean {interp} {
-      interp hide $interp expr expr
-    }
+  nx::Class create ExprInterp -superclasses EmptyInterp {
+    # :protected method beforeClean {interp} {
+    #   interp hide $interp expr expr
+    # }
 
     :protected method clean {interp} {
-      $interp eval {namespace delete ::}
+      interp hide $interp expr expr
+      # $interp eval {namespace delete ::}
+      next
     }
 
-    :protected method afterClean {interp} {
-      # interp expose $interp expr expr
+    :public method dispatchUnknown {unknown args} {
+      return [list [namespace tail $unknown] {*}$args]
     }
+
 
     :public method run {script} {
       set interpCmd [:require]
@@ -267,39 +293,80 @@ apply {{version code {test ""}} {
     }
   }
 
-  if {0} {
-  
-  
-  nx::Class create ComputerBuilder {
-    :public method "<- computer" {a b} {
-      return $a$b
-    }
-    :public method "<- disks" {c} {
-      return $c
-    }
-    :public method "<- proc" {d} {
-      return $d
-    }
 
-    :public method get {script} {
-      if {[info commands [self]::runner] eq ""} {
-        interp create [self]::runner -safe
-      
-        interp hide [self]::runner expr expr
-        interp eval [self]::runner {namespace delete ::}
-        interp expose [self]::runner expr expr
-        foreach subm [:info lookup methods -path "<- *"] {
-          lassign $subm _ m
-          # TODO: handle subm as list/2+
-          interp alias [self]::runner ::tcl::mathfunc::$m {} [self] {*}$subm
+  nx::Class create InstanceBuilder {
+
+    nx::Class create [self]::Object {
+      :method __object_configureparameter {} {
+        return setObjVars:alias,optional,args
+      }
+
+      ::nsf::parameter::cache::classinvalidate [current]
+
+      :method setObjVars {args} {
+        # TODO: provide mset, or better cset!
+        foreach {k v} $args {
+          if {[string match "-*" $k]} {
+            set k [string trimleft $k "-"]
+          }
+          set :$k $v
         }
       }
-      [self]::runner eval [list ::expr $script]
-    }
-  }
-}
 
-  namespace export Builder Interp EmptyInterp ExprInterp
+    }
+    
+    :property [list \
+               factoryPrefix \
+               "[list [self]::Object new]"]
+    
+    :property -accessor public -incremental \
+        {properties:substdefault "[dict create]"} {
+          :public object method value=set {obj prop value} {
+            if {[$obj $prop isSet]} {
+              set value [dict merge [$obj $prop get] $value]
+            }
+            next [list $obj $prop $value]
+          }
+          
+          :public object method value=isSet {obj prop p:optional} {
+            set isDictSet [$obj eval [list info exists :$prop]]
+            if {![info exists p]} {
+              return $isDictSet
+            } else {
+              return [expr {$isDictSet && [dict exists [$obj $prop get] $p]}]
+            }
+          }
+          
+          :public object method value=get {obj prop p:optional} {
+            set properties [next [list $obj $prop]]
+            if {[info exists p]} {
+              dict filter $rules key $p
+            } else {
+              return $properties
+            }
+          }
+          
+          :public object method value=add {obj prop p value} {
+            $obj eval [list dict set :$prop $p $value]
+          }
+          
+          :public object method value=delete {obj prop p} {
+            $obj eval [list dict unset :$prop $p]
+          }
+        }
+    
+    :public method get {args} {
+      # TODO: make any properties passed into as args override the
+      # collected ones -> [dict merge]?
+      try {
+        {*}${:factoryPrefix} {*}${:properties} {*}$args
+      } on error {e opts} {
+        throw [list DJDSL DADA [namespace tail [current class]] GET] $e]
+      }
+    }
+  }; # InstanceBuilder
+
+  namespace export Builder Interp EmptyInterp ExprInterp InstanceBuilder
   
 } {
 
@@ -311,7 +378,82 @@ apply {{version code {test ""}} {
 
   package req djdsl::examples::models
   namespace import ::djdsl::examples::models::*
-  puts ===[info commands ::djdsl::dada::test::*]
+
+  #
+  # Introductory example: A configuration DSL à la Ansible playbooks.
+  #
+
+  #// playbook1 //
+  nx::Class create PlaybookBuilder -superclasses Builder {
+
+    # entry point
+    :public method get {script} {
+      set script [string cat "playbook" "(" $script ")"]
+      next [list $script]
+    }
+
+    # invocation handlers
+    :variable tasks [list]
+    :public method "<- task" {args} {
+      lappend :tasks [${:output} new task {*}[concat {*}$args]]
+      return
+    }
+    
+    :public method "<- play" {args} {
+      set p [${:output} new play -tasks ${:tasks} {*}[concat {*}$args]]
+      set :tasks [list]
+      return $p
+    }
+     
+    :public method "<- playbook" {args} {
+      puts HERE!!!!!
+      ${:output} plays set $args
+    }
+
+    # dynamic reception
+    :public method handleUnknown {key args} {
+      return [list -$key [concat {*}$args]]
+    }
+
+    # instantiation incl. interp wrapper and language-model instance
+    :create pbb \
+        -interp [ExprInterp new] \
+        -output [Ansible new playbook]
+    
+  }; # PlaybookBuilder
+  #// end //
+  
+  set playbook {
+#// playbook2 //
+play(
+  hosts("webservers"),
+  remote_user("admin"),
+  task(
+    name("is webserver running?"),
+    service(
+      name("http"),
+      state("started")))),
+play(
+  hosts("databases"),
+  remote_user("admin"),
+  task(
+    name("is postgresql at the latest version?"),
+    yum(
+      name("postgresql"),
+      state("latest")
+      )))
+#// end //
+}
+
+  regsub -all -line {^\s*#//.*//\s*$} $playbook {} playbook
+  
+  set pb [pbb get $playbook]
+
+  ? {$pb info class} ::djdsl::examples::models::Ansible::Playbook
+  ? {llength [$pb plays get]} 2
+  ? {[[lindex [$pb plays get] 1] tasks get] yum get} \
+      "-name postgresql -state latest"
+  
   #
   # == DSL extension (ex.: DOT definition of graphs)
   #
@@ -531,47 +673,13 @@ apply {{version code {test ""}} {
   # +Behaviours::StateMachine+ language model.
   #
   
-  nx::Class create TransitionBuilder {
+  nx::Class create TransitionBuilder -superclasses InstanceBuilder {
+
     :property sm:object,type=[Behaviours]::StateMachine
     :property -accessor public event:object
 
-    :property -accessor public -incremental properties {
-      :public object method value=set {obj prop value} {
-        if {[$obj $prop isSet]} {
-          set value [dict merge [$obj $prop get] $value]
-        }
-        next [list $obj $prop $value]
-      }
-      
-      :public object method value=isSet {obj prop p:optional} {
-        set isDictSet [$obj eval [list info exists :$prop]]
-        if {![info exists p]} {
-          return $isDictSet
-        } else {
-          return [expr {$isDictSet && [dict exists [$obj $prop get] $p]}]
-        }
-      }
-      
-      :public object method value=get {obj prop p:optional} {
-        set properties [next [list $obj $prop]]
-        if {[info exists p]} {
-          dict filter $rules key $p
-        } else {
-          return $properties
-        }
-      }
-      
-      :public object method value=add {obj prop p value} {
-        $obj eval [list dict set :$prop $p $value]
-      }
-
-      :public object method value=delete {obj prop p} {
-        $obj eval [list dict unset :$prop $p]
-      }
-    }
-    
-    :public method get {} {
-      ${:sm} new transition {*}${:properties}
+    :method init {} {
+      set :factoryPrefix [list ${:sm} new transition]
     }
   }
 

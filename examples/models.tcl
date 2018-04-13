@@ -288,6 +288,32 @@ apply {{version code {test ""}} {
   
   namespace export {*}[namespace export] GuardedBehaviours GuardableStateMachine
 
+  #
+  # A skeleton hinting at full ansible playbooks:
+  # See http://docs.ansible.com/ansible/latest/user_guide/playbooks_intro.html#playbook-language-example
+  # 
+  
+  Asset create Ansible {
+    
+    LanguageModel create Playbook {
+      :property -incremental plays:object,type=Playbook::Play,1..*
+      
+      Classifier create Play {
+        :property -accessor public tasks:object,type=Task,1..*
+        :property -accessor public hosts
+        :property -accessor public remote_user
+      }
+      
+      Classifier create Task {
+        :property -accessor public name
+        # modules
+        :property -accessor public service
+        :property -accessor public yum
+      }
+    }
+  }
+
+  namespace export {*}[namespace export] Ansible
 
   
 } {

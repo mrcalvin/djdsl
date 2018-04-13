@@ -2,12 +2,15 @@ package require tcltest
 ::tcltest::configure {*}$argv
 
 package require djdsl::dada
+package require djdsl::examples::models
 
 
 
 namespace eval ::djdsl::dada::test {
   namespace import ::tcltest::*
   namespace import ::djdsl::dada::*
+  namespace import ::djdsl::examples::models::*
+  
   
   variable SETUP {
     
@@ -123,7 +126,7 @@ namespace eval ::djdsl::dada::test {
         lappend () [::cb get {test(1)}]
         
       } \
-      -cleanup $CLEANUP -result "NX2-NX-tcl::mathfunc::nx-3 test-1"
+      -cleanup $CLEANUP -result "NX2-NX-nx-3 test-1"
 
   test dada-0.5 "Builder: unknown handling under chaining (dynamic reception)" \
       -setup $SETUP \
@@ -157,7 +160,7 @@ namespace eval ::djdsl::dada::test {
         lappend () [::cb2 get {unknown(1)}]
         
       } \
-      -cleanup $CLEANUP -result "NX3-NX2-NX-tcl::mathfunc::nx-3 NX3-NX2-NX-tcl::mathfunc::unknown-1"
+      -cleanup $CLEANUP -result "NX3-NX2-NX-nx-3 NX3-NX2-NX-unknown-1"
 
   test dada-0.6 "Builder: unknown handling under chaining (dynamic reception), empty interp" \
       -setup $SETUP \
@@ -194,7 +197,114 @@ namespace eval ::djdsl::dada::test {
         lappend () [::cb2 get {unknown 1}]
       } \
       -cleanup $CLEANUP -result "NX3-NX2-NX-nx-3 NX3-NX2-NX-1-"; # TODO: would like to see NX3-NX2-NX-nx-3 NX3-NX2-NX-unknown-1
-  
+
+  test dada-1.1 "Interp creation" -setup $SETUP -body {
+    
+    catch {Interp new} msg opts
+    set () [dict get $opts -errorcode]
+
+  } -cleanup $CLEANUP -result "DJDSL ABSTRACT"
+
+  test dada-1.2 "Builder creation" -setup $SETUP -body {
+    
+    catch {Builder new} msg opts
+    set () [dict get $opts -errorcode]
+
+  } -cleanup $CLEANUP -result "DJDSL ABSTRACT"
+
+  test dada-2.1 "literal list, without interp (top-down, recurse-descent)" \
+      -setup $SETUP \
+      -body {
+        nx::Class create PlaybookBuilder -superclasses Builder {
+          
+          :variable currentItem [list]
+          
+          :public method "<- play" {content} {
+            set p [${:output} new play]
+            set :currentItem [linsert ${:currentItem} 0 [${:output} new play]]
+            set r [:get $content]
+            $p tasks set $r
+            set :currentItem [lassign ${:currentItem} _]
+            return $p
+          }
+          
+          :public method "<- task" {content} {
+            set t [${:output} new task]
+            set :currentItem $t
+            set r [:get $content]
+            return $t
+          }
+          
+          :public method handleUnknown {el content} {
+            set c [lindex ${:currentItem} 0]
+            $c $el set $content
+            return
+          }
+          
+          :public method "<- playbook" {content} {
+            set :currentItem ${:output}
+            set r [:get $content]
+            ${:output} plays set $r
+            return ${:output}
+          }
+          
+          :public method get {script} {
+            if {![llength ${:currentItem}]} {
+              set script [list playbook $script] 
+            }
+            set out [list]
+            foreach {element content} $script {
+              lappend out {*}[:<- $element $content]
+            }
+            return $out
+          }
+        }
+        
+        PlaybookBuilder create pbb -output [Ansible new playbook]
+
+        set (playbookScript) {
+#// playbook3 //
+play {
+  hosts       webservers
+  remote_user admin
+  task {
+    name    "is webserver running?"
+    service {
+      name  http
+      state started}}}
+play {
+  hosts	databases
+  remote_user admin
+  task {
+    name "is postgresql at the latest version?"
+    yum  {
+      name  postgresql
+      state latest}}}
+#// end //
+}
+
+        regsub -all -line {^\s*#//.*//\s*$} $(playbookScript) {} (playbookScript)
+
+        set (pb) [pbb get $(playbookScript)]
+        
+        lappend () [$(pb) info class] 
+        lappend () [llength [$(pb) plays get]]
+        
+      } -cleanup $CLEANUP \
+    -result [list [Ansible]::Playbook 2]
+
+test dada-2.1 "InstanceBuilder basics: default prefix" -setup $SETUP -body {
+
+     nx::Class create MyInstanceBuilder -superclasses InstanceBuilder
+     set (mib) [MyInstanceBuilder new]
+     $(mib) properties add -x 1
+     $(mib) properties add -z 1
+     lappend () [[$(mib) get] info vars]
+     set (mib2) [MyInstanceBuilder new]
+     lappend () [[$(mib2) get] info vars]
+
+} -cleanup $CLEANUP -result "{x z} {}"
+
   # OTHER TODOS:
   # - Provide Interp object for collocated calls (so that I don't have
   #   to check for interp existance or absence)
@@ -202,7 +312,37 @@ namespace eval ::djdsl::dada::test {
   # - complete predecessors API
   # - add successors counterpart, how?
 
-}	
+}
+
+if {0} {
+  nx::Class create ComputerBuilder {
+    :public method "<- computer" {a b} {
+      return $a$b
+    }
+    :public method "<- disks" {c} {
+      return $c
+    }
+    :public method "<- proc" {d} {
+      return $d
+    }
+    
+    :public method get {script} {
+      if {[info commands [self]::runner] eq ""} {
+        interp create [self]::runner -safe
+      
+        interp hide [self]::runner expr expr
+        interp eval [self]::runner {namespace delete ::}
+        interp expose [self]::runner expr expr
+        foreach subm [:info lookup methods -path "<- *"] {
+          lassign $subm _ m
+          # TODO: handle subm as list/2+
+          interp alias [self]::runner ::tcl::mathfunc::$m {} [self] {*}$subm
+        }
+      }
+      [self]::runner eval [list ::expr $script]
+    }
+  }
+}
   
 #
 # Local variables:
