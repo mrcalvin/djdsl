@@ -216,10 +216,7 @@ apply {{version code {test ""}} {
       set interpCmd ${:cmdName}
       if {[info commands $interpCmd] eq ""} {
         interp create $interpCmd -safe
-        # :beforeClean $interpCmd
-        :clean $interpCmd
-        # :afterClean $interpCmd
-        # :register $interpCmd
+        :prepare $interpCmd
       }
       return $interpCmd
     }
@@ -233,9 +230,7 @@ apply {{version code {test ""}} {
 
     # [interp] construction
 
-    # :protected method beforeClean {args} {}
-    :protected method clean {args} {}
-    # :protected method afterClean {args} {}
+    :protected method prepare {args} {}
     
     # public API
 
@@ -258,17 +253,14 @@ apply {{version code {test ""}} {
   }
 
   nx::Class create EmptyInterp -superclasses Interp {
-    :protected method clean {interp} {
+    :protected method prepare {interp} {
       $interp eval {namespace delete ::}
     }
   }
 
   nx::Class create ExprInterp -superclasses EmptyInterp {
-    # :protected method beforeClean {interp} {
-    #   interp hide $interp expr expr
-    # }
 
-    :protected method clean {interp} {
+    :protected method prepare {interp} {
       interp hide $interp expr expr
       # $interp eval {namespace delete ::}
       next
