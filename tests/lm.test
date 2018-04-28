@@ -7,6 +7,11 @@ package require djdsl::lm
 namespace eval ::djdsl::lm::test {
   namespace import ::tcltest::*
   namespace import ::djdsl::lm::*
+
+  customMatch stripNs [list apply {{testNs expected actual} {
+    set strippedActual [string map [list $testNs ""] $actual]
+    expr {$strippedActual eq $expected}
+  }} [namespace current]]
   
   variable SETUP {
     set (lm1) [Asset create Graphs {
@@ -30,7 +35,7 @@ namespace eval ::djdsl::lm::test {
       Classifier create Weight {
         :property -accessor public {value 0}
       }
-      Role create A
+      Classifier create A
       Role create Edge -superclasses A {
         :property -accessor public weight:object,type=Weight
       }
@@ -88,7 +93,116 @@ namespace eval ::djdsl::lm::test {
     $(lm1)::weighted::Edge info superclasses
   } -cleanup $CLEANUP -result "[namespace current]::Graphs::weighted::A"
 
-  # TODO: test case on precedences ("FROs")
+  test ctx-2.1 "FRO (basics): FFJ style of precedence order" -body {
+    set (lm1) [Asset create SomeAsset {
+      LanguageModel create SomeModel {
+        Classifier create A
+        Classifier create B -superclasses A
+        Classifier create C -superclasses B
+      }
+
+      Collaboration create SomeFeature {
+        Role create A
+        Role create B
+        Role create C
+      }
+    }]
+
+    set (comp1) [Composition create SomeComp \
+                     -binds SomeAsset \
+                     -base $(lm1)::SomeModel \
+                     -features $(lm1)::SomeFeature]
+
+    [[$(comp1) new somemodel] new c] info precedence
+
+  } -cleanup $CLEANUP -match stripNs -result [list ::SomeComp::SomeModel::C \
+                                                  ::SomeAsset::SomeFeature::C \
+                                                  ::SomeAsset::SomeModel::C \
+                                                  ::SomeComp::SomeModel::B \
+                                                  ::SomeAsset::SomeFeature::B \
+                                                  ::SomeAsset::SomeModel::B \
+                                                  ::SomeComp::SomeModel::A \
+                                                  ::SomeAsset::SomeFeature::A \
+                                                  ::SomeAsset::SomeModel::A \
+                                                  ::nx::Object]
+
+  test ctx-2.2 "FRO (with local precedences)" -body {
+    set (lm1) [Asset create SomeAsset {
+      LanguageModel create SomeModel {
+        Classifier create A
+        Classifier create B -superclasses A
+        Classifier create C -superclasses B
+      }
+
+      Collaboration create SomeFeature {
+        Role create A
+        Classifier create D
+        Role create B -superclasses D
+        Role create C
+      }
+    }]
+
+    set (comp1) [Composition create SomeComp \
+                     -binds SomeAsset \
+                     -base $(lm1)::SomeModel \
+                     -features $(lm1)::SomeFeature]
+
+    [[$(comp1) new somemodel] new c] info precedence
+
+  } -cleanup $CLEANUP -match stripNs -result [list ::SomeComp::SomeModel::C \
+                                                  ::SomeAsset::SomeFeature::C \
+                                                  ::SomeAsset::SomeModel::C \
+                                                  ::SomeComp::SomeModel::B \
+                                                  ::SomeAsset::SomeFeature::B \
+                                                  ::SomeComp::SomeModel::D \
+                                                  ::SomeAsset::SomeFeature::D \
+                                                  ::SomeAsset::SomeModel::B \
+                                                  ::SomeComp::SomeModel::A \
+                                                  ::SomeAsset::SomeFeature::A \
+                                                  ::SomeAsset::SomeModel::A \
+                                                  ::nx::Object]
+
+  test ctx-2.3 "FRO (with local precedences)" -body {
+    set (lm1) [Asset create SomeAsset {
+      LanguageModel create SomeModel {
+        Classifier create A
+        Classifier create B -superclasses A
+        Classifier create C -superclasses B
+      }
+
+      Collaboration create SomeFeature {
+        Role create A
+        Classifier create D
+        Role create B -superclasses D
+        Role create C
+      }
+
+      Collaboration create AnotherFeature {
+        Role create D
+      }
+    }]
+
+    set (comp1) [Composition create SomeComp \
+                     -binds SomeAsset \
+                     -base $(lm1)::SomeModel \
+                     -features [list $(lm1)::SomeFeature $(lm1)::AnotherFeature]]
+
+    [[$(comp1) new somemodel] new c] info precedence
+
+  } -cleanup $CLEANUP -match stripNs -result [list ::SomeComp::SomeModel::C \
+                                                  ::SomeAsset::SomeFeature::C \
+                                                  ::SomeAsset::SomeModel::C \
+                                                  ::SomeComp::SomeModel::B \
+                                                  ::SomeAsset::SomeFeature::B \
+                                                  ::SomeComp::SomeModel::D \
+                                                  ::SomeAsset::AnotherFeature::D \
+                                                  ::SomeAsset::SomeFeature::D \
+                                                  ::SomeAsset::SomeModel::B \
+                                                  ::SomeComp::SomeModel::A \
+                                                  ::SomeAsset::SomeFeature::A \
+                                                  ::SomeAsset::SomeModel::A \
+                                                  ::nx::Object]
+  
   # TODO: test case on abstractedness of Collaborations and Roles
   # TODO: test case on composition pre-conditions (Classifier for a Role etc.)
 }

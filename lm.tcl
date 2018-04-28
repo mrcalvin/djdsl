@@ -161,18 +161,61 @@ apply {{version code {test ""}} {
       return $d
     }
 
+
+    :private method patch {context ancestors compositionClasses} {
+      if {[lindex $ancestors 0] ne "::nx::Object"} {
+        if {[lindex $ancestors end] eq "::nx::Object"} {
+          set ancestors [lreplace $ancestors end end]
+        }
+        # patch any base-level sub-/superclass relationships using
+        # the corresponding composition classes.
+        set revMap [lreverse $compositionClasses]
+          set ancestors [lmap e $ancestors {
+            if {[dict exists $revMap $e]} {
+              string cat $context :: [$e info name]
+            } else {
+              set e
+            }
+          }]
+        return $ancestors
+      } else {
+        list
+      }
+    }
+    
     :private method weave {-baseClass -featureModules -context} {
       set d [: -local computeExtensionHierarchy]
 
       set collaborationClassNames [dict keys [dict get $d class]]
       # Let the resulting language model (context) inherit from the extension classes and the base class.
       set superclasses [list {*}[concat {*}[dict get $d extension ${:base}]] ${:base}]
-      nsf::relation::set $context superclass [list {*}$superclasses {*}[$context info superclasses]]
+      nsf::relation::set $context superclass \
+          [list {*}$superclasses {*}[$context info superclasses]]
 
+      # batch create the composition classes, so they can be used
+      # directly in patching the generalisations below.
       foreach name $collaborationClassNames {
-        set supers [list {*}[dict get $d extension $name] [dict get $d class $name]]
-        set cls [Classifier create ${context}::$name -superclasses $supers]
-        $context createFactory $cls
+        Classifier create ${context}::$name
+      }
+      
+      foreach name $collaborationClassNames {
+        set expansion [[dict get $d class $name] info superclasses -closure]
+        set expansion [: -local patch $context $expansion [dict get $d class]]
+
+        set extension [list]
+        foreach r [dict get $d extension $name] {
+          lappend extension $r
+          lappend extension {*}[: -local patch $context \
+                                    [$r info superclasses -closure] \
+                                    [dict get $d class]]
+        }
+
+        set supers [list {*}$extension \
+                        [dict get $d class $name] \
+                        {*}$expansion]
+        
+        nsf::relation::set ${context}::$name superclass $supers
+        $context createFactory ${context}::$name
       }
     }
 
@@ -238,7 +281,10 @@ apply {{version code {test ""}} {
   set wg [WeightedGraphs new graph -name "wg"]
   set n1 [$wg new node]
   set n2 [$wg new node]
-  set e [$wg new edge -a $n1 -b $n2 -weight [$wg new weight -value 1]]
+  set e [$wg new edge \
+             -a $n1 \
+             -b $n2 \
+             -weight [$wg new weight -value 1]]
   #// end //#
 
   ? {$wg info precedence} \
