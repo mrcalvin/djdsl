@@ -236,7 +236,7 @@ apply {{version code {test ""}} {
 
 
   #
-  # == DSL unification (ex.: State-machine definition language and expr language)
+  # == DSL unification (ex.: State-machine definition language and BCEL language)
   #
   
   #
@@ -407,7 +407,6 @@ apply {{version code {test ""}} {
       }
     }; # Eval
   }; # Expressions
-
   
   Composition create EvaluableExpr \
       -binds Expressions \
@@ -525,17 +524,17 @@ apply {{version code {test ""}} {
 
   set gb2 [BaseGraphBuilder new]
   $gb2 run {
-    #// dot1 //
-    graph {
-      // node definitions
-      "1st Edition";
-      "2nd Edition";
-      "3rd Edition";
-      // edge definitions
-      "1st Edition" -- "2nd Edition";
-      "2nd Edition" -- "3rd Edition";
-    }
-    #// end //
+  #// dot1 //
+  graph {
+    // node definitions
+    "1st Edition";
+    "2nd Edition";
+    "3rd Edition";
+    // edge definitions
+    "1st Edition" -- "2nd Edition";
+    "2nd Edition" -- "3rd Edition";
+  }
+  #// end //
   }
 
   ? {llength [[$gb2 output get] edges get]} 2
