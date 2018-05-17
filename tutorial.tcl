@@ -63,8 +63,8 @@ apply {{version code {test ""}} {
   #// lm //
   nx::Class create Expr
   nx::Class create Add -superclasses Expr {
-    :property leftExpr:object,type=[namespace which Expr],required
-    :property rightExpr:object,type=[namespace which Expr],required
+    :property leftExpr:object,type=Expr,required
+    :property rightExpr:object,type=Expr,required
   }
   nx::Class create Lit -superclasses Expr {
     :property -accessor public value:double,required
