@@ -565,14 +565,9 @@ apply {{version code {test ""}} {
     #
 
     :public method new {args} {
-      set cls [next [list -superclasses [namespace current]::Builder \
+      set cls [next [list -superclasses [namespace current]::Engine \
                          -generator [self] \
                          {*}$args]]
-
-      # set cls [:new -superclasses [namespace current]::Builder \
-        #                 -generator [self] \
-         #                {*}$args]
-
       
       ## initialize to NX/PEG backend defaults or dummies
       pt::tclparam::configuration::nx def _ _ _  \
@@ -717,6 +712,8 @@ apply {{version code {test ""}} {
     :public forward "TRANSFORM <==" %self import -gtors
 
     :public forward "TRANSFORM <-=" %self import 
+
+    # TODO: make the default position 0 (to reflect the disjointness issue)
     
     :public method import {-gtors:switch
                            -rewrite:switch
@@ -1285,7 +1282,7 @@ apply {{version code {test ""}} {
         set body [pt::peg::to::tclparam convert $ser]
         #puts stderr body=$body
         set cls [[current class]::Class new \
-                     -superclasses [namespace current]::Builder \
+                     -superclasses [namespace current]::Engine \
                      -factory $modelFactory \
                      -generator [self] -- $body]
         return $cls
@@ -1652,7 +1649,7 @@ apply {{version code {test ""}} {
     }
   }
   
-  nx::Class create Builder -superclasses pt::rde::nx {
+  nx::Class create Engine -superclasses pt::rde::nx {
 
     :public method parse {script} {
 
@@ -1794,7 +1791,7 @@ apply {{version code {test ""}} {
         unset -nocomplain :choices($mark)
       }
     }
-  }; # Builder
+  }; # Engine
 
   namespace export Parser BuilderGenerator ModelFactory Grammar LanguageModelFactory
   
@@ -2586,12 +2583,13 @@ void: WS <- <space>*;
       -start GM \
       -merges [list $BCEL $MissGrants] \
       {
-    #// gMgc2a //
-    # a) receiving rules
-                 T <- `Transition` OrigT OBRACKET guard:Expression CBRACKET;
+  #// gMgc2a //
+  # a) receiving rules
+          T <- `Transition` OrigT OBRACKET
+               guard:Expression CBRACKET;
     void: OBRACKET <- WS '\[' WS;
     void: CBRACKET <- WS '\]' WS;
-    #// end //      
+  #// end //      
 } {
   #// gMgc2b //
   # b) transforms
@@ -2898,9 +2896,6 @@ state active
     D <- 'a' !'e';
   }
   puts ----[G rules get]
-
-}
-
   
   
   #
