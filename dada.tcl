@@ -396,24 +396,24 @@ apply {{version code {test ""}} {
       set :tasks [list]
       return $p
     }
-     
+    
     :public method "<- playbook" {args} {
-      puts HERE!!!!!
       ${:output} plays set $args
     }
-
+    
     # dynamic reception
     :public method handleUnknown {key args} {
       return [list -$key [concat {*}$args]]
-    }
-
-    # instantiation incl. interp wrapper and language-model instance
-    :create pbb \
-        -interp [ExprInterp new] \
-        -output [Ansible new playbook]
-    
+    }  
   }; # PlaybookBuilder
   #// end //
+
+# instantiation incl. interp wrapper and language-model instance
+PlaybookBuilder create pbb \
+    -interp [ExprInterp new] \
+    -output [Ansible new playbook]
+    
+
   
   set playbook {
 #// playbook2 //
