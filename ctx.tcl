@@ -166,7 +166,8 @@ apply {{version code {test ""}} {
       
       if {$options ne ""} {
         set nspec [::nx::MetaSlot optionsToValueCheckingSpec $options]
-        set exprStr "\[::nsf::is $nspec \${:$name}\]"
+        set exprStr "!\[info exists :$name\] || \[::nsf::is $nspec \${:$name}\]"
+        # set exprStr "\[::nsf::is $nspec \${:$name}\]"
         set thenScript [list return -level 0 -code error \
                             -errorcode [list DJDSL CTX VIOLATED $vs] \
                             "condition '$exprStr' failed"]
@@ -461,13 +462,14 @@ apply {{version code {test ""}} {
 
     #// ctx6b //
     Collaboration create capped {
-      :property -accessor public {MAXEDGES:integer 10} {
-        :public object method value=isSet {obj prop} {
-          ::nsf::var::exists $obj $prop
-        }
-      }
+      :property -accessor public {MAXEDGES:integer 10} 
     }
     #// end //
+
+    capped::slot::MAXEDGES public object method value=isSet {obj prop} {
+      ::nsf::var::exists $obj $prop
+    }
+
 
   }; # Graphs
   

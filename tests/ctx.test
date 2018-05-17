@@ -714,6 +714,8 @@ namespace eval ::djdsl::ctx::test {
   # 8) test case: model properties (let).
   # 9) test case: marker mode (evaluate all conditions, collect all violations, severity filter)
   # 10) test case: formatable violation message (cond "failed because of %name" {})
+  # 11) intrinsic constraint for :reqired only properties yields
+  # ::nsf::is call with type check. boom.
 }
 
 #
