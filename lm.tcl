@@ -240,12 +240,10 @@ apply {{version code {test ""}} {
   ? {[$ctx new c] info class} ${ctx}::C
 
   #// assets //#
-  Asset create Graphs {
-    
+  Asset create Graphs {    
     LanguageModel create Graph {
       :property name:alnum
       :property -incremental edges:object,type=Edge,0..n
-
       Classifier create A
       Classifier create Node
       Classifier create Edge {
@@ -253,7 +251,6 @@ apply {{version code {test ""}} {
         :property -accessor public b:object,type=Node
       }
     }
-    
     Collaboration create weighted {
       Classifier create Weight {
         :property -accessor public {value:integer 0}
