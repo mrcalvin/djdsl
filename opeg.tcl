@@ -2906,9 +2906,9 @@ state active
   #
   # [source,tcl]
   # --------------------------------------------------
-  # debug on pt/engine
+  # debug on pt/rdengine
   # # your script under debugging
-  # debug off pt/engine
+  # debug off pt/rdengine
   # --------------------------------------------------
 
 
