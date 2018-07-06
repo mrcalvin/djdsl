@@ -919,6 +919,62 @@ void: WS   <- <space>;
     lappend () [string is list [lindex [$(out) cget -p1] 0]]
     
   } -cleanup $CLEANUP -result [list 0 1 1 0]
+
+  test opeg-4.1 "Collections" -setup $SETUP -body {
+    
+    set (helper) [nx::Class create HyperPoint {
+      :property x:integer,1..*
+      :property y:integer
+    }]
+    
+    set (g) [Grammar newFromScript "
+      OPEG Coordinate (P)
+      	P  <- `HyperPoint` '(' (x:<digit>)+ ',' (x:<digit> y:<digit>)? ')';
+      END;
+    "]
+    
+    set (p) [$(g) new]
+  
+    set (out) [$(p) parse "(92,32)"]
+    
+    lappend () [expr {[$(out) info class] eq $(helper)}]
+    lappend () [expr {[$(out) cget -x] eq "9 2 3"}];
+    lappend () [expr {[$(out) cget -y] eq "2"}];
+    
+  } -cleanup $CLEANUP -result [list 1 1 1]
+
+  test opeg-4.2 "Collections" -setup $SETUP -body {
+    
+    set (helper) [nx::Class create Call {
+      :property fun
+      :property args
+    }]
+    
+    set (g) [Grammar newFromScript "
+        OPEG CallDecl (C)
+             C    <- `Call` fun:ID '(' (args:Exp)? (',' args:Exp)* ')';
+             ID   <- 'foo';
+             Exp  <- <digit>;
+        END;
+    "]
+    
+    set (p) [$(g) new]
+
+
+    set (out1) [$(p) parse {foo(1,1,2,2)}]
+
+    lappend () [expr {[$(out1) info class] eq $(helper)}]
+    lappend () [expr {[$(out1) cget -fun] eq "foo"}];
+    lappend () [expr {"args" in [$(out1) info vars]}];
+    lappend () [expr {[$(out1) cget -args] eq "1 1 2 2"}];
+
+
+    set (out2) [$(p) parse {foo()}]    
+    lappend () [expr {[$(out2) info class] eq $(helper)}]
+    lappend () [expr {[$(out2) cget -fun] eq "foo"}];
+    lappend () [expr {"args" ni [$(out2) info vars]}];
+    
+  } -cleanup $CLEANUP -result [list 1 1 1 1 1 1 1]
 }
 
 # TODO: ... Why does [$container reachable] contain 'n'?
