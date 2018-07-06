@@ -975,6 +975,62 @@ void: WS   <- <space>;
     lappend () [expr {"args" ni [$(out2) info vars]}];
     
   } -cleanup $CLEANUP -result [list 1 1 1 1 1 1 1]
+
+  test opeg-4.3 "Collections" -setup $SETUP -body {
+    
+    set (helper) [nx::Class create Call {
+      :property fun
+      :property args
+    }]
+    
+    set (g) [Grammar newFromScript "
+        OPEG CallDecl (C)
+             C    <- `Call` fun:ID '(' ARGS ')';
+             ARGS <- (args:Exp)? (',' ARGS)*;
+             ID   <- 'foo';
+             Exp  <- <digit>;
+        END;
+    "]
+    
+    set (p) [$(g) new]
+
+    set (out) [$(p) parse {foo(1,1,2,2)}]
+
+    lappend () [expr {[$(out) info class] eq $(helper)}]
+    lappend () [expr {[$(out) cget -fun] eq "foo"}];
+    lappend () [expr {"args" in [$(out) info vars]}];
+    lappend () [expr {[$(out) cget -args] eq "1 1 2 2"}];
+    
+  } -cleanup $CLEANUP -result [list 1 1 1 1]
+
+  test opeg-4.4 "Collections" -setup $SETUP -body {
+    
+    set (helper) [nx::Class create Call {
+      :property fun
+      :property args
+    }]
+    
+    set (g) [Grammar newFromScript "
+     OPEG CallDecl (C)
+        C    <- `Call` fun:ID '(' ARGS ')';
+        ARGS <- (args:Exp)? (',' args:Exp)*;
+        ID   <- 'foo';
+        Exp  <- <digit>;
+      END;
+    "]
+    
+    set (p) [$(g) new]
+
+    set (out) [$(p) parse {foo(2,1,2,5)}]
+
+    lappend () [expr {[$(out) info class] eq $(helper)}]
+    lappend () [expr {[$(out) cget -fun] eq "foo"}];
+    lappend () [expr {"args" in [$(out) info vars]}];
+    lappend () [expr {[$(out) cget -args] eq "2 1 2 5"}];
+    
+  } -cleanup $CLEANUP -result [list 1 1 1 1]
+
+  
 }
 
 # TODO: ... Why does [$container reachable] contain 'n'?
