@@ -1030,8 +1030,165 @@ void: WS   <- <space>;
     
   } -cleanup $CLEANUP -result [list 1 1 1 1]
 
+  test opeg-5.1 "Choice propagation" -setup $SETUP -body {
+
+    set (helper) [nx::Class create Base {
+      :property -accessor public p0 {
+        :public object method value=get {obj prop in} {
+          return [nx::Object create [$obj info class]::$in]
+        }
+      }
+    }]
+    
+    set (helper1) [nx::Class create XX -superclasses Base {
+      :property p1
+    }]
+    
+    set (helper2) [nx::Class create YY -superclasses Base {
+      :property p2
+    }]
+    
+    set (g) [Grammar newFromScript {OPEG MyPEG (D)
+      D <- `XX` p1:A / `YY` p2:B; # TODO: top-level expression nesting is not supported (flattening): ((`XX` p1:A / `YY` p2:B))
+      leaf:  A <-  'A' <digit>+;
+      leaf:  B <-  'B' <digit>+;
+      END;}]
+    
+    set (p) [$(g) new]
+    
+    lappend () [expr {[[$(p) parse {B1}] info class] eq $(helper2)}]
+    lappend () [expr {[[$(p) parse {A1}] info class] eq $(helper1)}]
+    
+  } -cleanup $CLEANUP -result [list 1 1]
   
+  test opeg-5.2 "Choice propagation" -setup $SETUP -body {
+    
+    set (helper) [nx::Class create Base {
+      :property -accessor public p0 {
+        :public object method value=get {obj prop in} {
+          return [nx::Object create [$obj info class]::$in]
+        }
+      }
+    }]
+    
+    set (helper1) [nx::Class create XX -superclasses Base {
+      :property p1
+    }]
+    
+    set (helper2) [nx::Class create YY -superclasses Base {
+      :property p2
+    }]
+
+    set (g) [Grammar newFromScript {OPEG MyPEG (D)
+         D <- '1' / `XX` p1:(`$root p0 $0` A / '0' / `$root p0 $0` C) / '3' / `YY` p2:(`$root p0 $0` B);
+  leaf:  A <-  'A' <digit>+;
+  leaf:  B <-  'B' <digit>+;
+  leaf:  C <-  'C' <digit>+;
+  END;}]
+        
+    set (p) [$(g) new]
+
+    set (l1) [$(p) parse {B1}]
+    lappend () [expr {[$(l1) info class] eq $(helper2)}]
+    lappend () [expr {[[$(l1) cget -p2] info name] eq "B1"}]
+
+    set (l2) [$(p) parse {A1}]
+    lappend () [expr {[$(l2) info class] eq $(helper1)}]
+    lappend () [expr {[[$(l2) cget -p1] info name] eq "A1"}]
+
+    set (l3) [$(p) parse {C1}]
+    lappend () [expr {[$(l3) info class] eq $(helper1)}]
+    lappend () [expr {[[$(l3) cget -p1] info name] eq "C1"}]
+    
+  } -cleanup $CLEANUP -result [lrepeat 6 1]
+  
+  test opeg-6 "Enso examples: Drawing" -setup $SETUP -body {
+    
+    set (helper1) [nx::Class create Drawing {
+      :property -accessor public lines:0..n,object,type=Line {
+        :public object method value=get {obj value in:optional} {
+          set lines [next [list $obj $value]]
+          if {[info exists in]} {
+            foreach l $lines {
+              if {[$l cget -label] eq $in} {
+                return $l
+              }
+            }
+          } else {
+            return $lines
+          }
+        }
+      }
+    }]
+    
+    set (helper2) [nx::Class create Line {
+      :property label
+      :property points:0..n,object,type=Point2D
+      :property adj:object,type=Line
+      :property adj
+    }]
+    
+    set (helper3) [nx::Class create Point2D {
+      :property x:integer
+      :property y:integer
+    }]
+        
+    set (g) [Grammar newFromScript "
+     OPEG Drawing (Drawing)
+      Drawing    <- `Drawing` 'drawing' (<space>+ lines:Line)+;
+      Line       <- `Line` 'line' ' '+ DAPOSTROPH label:Str DAPOSTROPH (' '+ points:Point2D)* ' '+ Adj?;
+      Adj        <- 'adj' ' '+ DAPOSTROPH adj:(`\$root lines \$0` Str) DAPOSTROPH;
+      Str        <- !DAPOSTROPH <alnum>*;
+      Point2D    <- `Point2D` 'point' ' '+ x:<digit>+ ' '+ y:<digit>+;
+void: DAPOSTROPH    <- '\"' ;
+     END;
+    "]
+    
+    set (p) [$(g) new]
+    
+    set (out) [$(p) parse {drawing
+      line "Flamingo" point 1 1 point 2 2 point 20 20 point 21 21 point 3 3 point 4 4 point 22 22 point 23 23 adj "Stork"
+      line "Stork" point 1 1 point 10 10 adj "Flamingo"}]
+    
+    lappend () [expr {[$(out) info class] eq $(helper1)}]
+    set lines [$(out) cget -lines]
+    lappend () [expr {[llength $lines] == 2}]
+    lassign $lines (l1) (l2)
+    lappend () [expr {[$(l1) cget -adj] eq $(l2)}]
+    lappend () [expr {[[$(l1) cget -adj] cget -label] eq [$(l2) cget -label]}]
+    lappend () [expr {[$(l2) cget -adj] eq $(l1)}]
+    lappend () [expr {[[$(l2) cget -adj] cget -label] eq [$(l1) cget -label]}]
+    
+  } -cleanup $CLEANUP -result [list 1 1 1 1 1 1]
+
+
+  test opeg-7 "Boolean toggle" -setup $SETUP -body {
+
+    set (helper) [nx::Class create Bool {
+      :property value:boolean
+    }]
+        
+    set (g) [Grammar newFromScript {OPEG MyPEG (B)
+      B <- `Bool` value:(`false` '++' / `true` '+');
+      END;}]
+    
+    set (p) [$(g) new]
+    
+    set (out1) [$(p) parse {++}]
+    lappend () [expr {[$(out1) info class] eq $(helper)}]
+    lappend () [string is boolean [$(out1) cget -value]]
+    lappend () [string is false [$(out1) cget -value]]
+
+    set (out2) [$(p) parse {+}]
+    lappend () [expr {[$(out2) info class] eq $(helper)}]
+    lappend () [string is boolean [$(out2) cget -value]]
+    lappend () [string is true [$(out2) cget -value]]
+    
+  } -cleanup $CLEANUP -result [lrepeat 6 1]
 }
+
+
+
 
 # TODO: ... Why does [$container reachable] contain 'n'?
 #       ... Can superfluous epsilons in sequences be eliminated? flattens? in:
@@ -1250,7 +1407,7 @@ set builderClass [$builderGen bgen $geom]
 set diagramBuilder [$builderClass new]
 
 set c [$diagramBuilder parse $aDraw]
-? {$c info class} ::Drawing
+lappend () [expr {[$c info class] eq $(helper1)}]
 set lines [$c cget -lines]
 ? {llength $lines} 2
 lassign $lines l1 l2
