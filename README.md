@@ -13,8 +13,8 @@ The supplemental material includes the multi-DSL development system DjDSL.
     * [`djdsl::dada`](dada.tcl): Define variable *internal*  DSL syntaxes. See the [djdsl::dada how-to](doc/dada.adoc).
 	* [`djdsl::opeg`](opeg.tcl): Define variable *external* DSL
 	  syntaxes using composable parsing grammars (PEG). See the
-      [djdsl::opeg ada how-to](doc/opeg.adoc).
-	* [`djdsl:: v1e`](v1e.tcl): Define variability models for
+      [djdsl::opeg how-to](doc/opeg.adoc).
+	* [`djdsl::v1e`](v1e.tcl): Define variability models for
       DSL-product lines. See the [djdsl::v1e how-to](doc/v1e.adoc).
 * [doc](doc/) contains the doctests for the five main components
   (NX/Tcl modules) that form DjDSL (see how-tos above).
