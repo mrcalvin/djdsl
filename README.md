@@ -6,8 +6,11 @@ The supplemental material includes the multi-DSL development system DjDSL.
 
 * The following script files contain Tcl modules providing the main
    DjDSL components:
-   * [djdsj::lm](lm.tcl)
-   * ...
+    * [djdsl::lm](lm.tcl): Define variable language models
+      for DSL. See the [djdsl::lm how-to](doc/lm.adoc).
+    * [djdsl::lm](lm.tcl): Define variable context conditions for
+      language models. See the [djdsl::ctx how-to](doc/ctx.adoc).
+	* ...
 * [doc](doc/) contains the doctests for the five main components
   (NX/Tcl modules) that form DjDSL.
 * [tutorials](tutorials/) contains important background material on
