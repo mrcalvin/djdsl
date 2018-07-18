@@ -10,10 +10,9 @@ The supplemental material includes the multi-DSL development system DjDSL.
       for DSL. See the [djdsl::lm how-to](doc/lm.adoc).
     * [`djdsl::ctx`](ctx.tcl): Define variable context conditions for
       language models. See the [djdsl::ctx how-to](doc/ctx.adoc).
-    * [`djdsl::dada`](dada.tcl): Define variable context conditions for
-      language models. See the [djdsl::dada how-to](doc/dada.adoc).
-	* [`djdsl::opeg`](opeg.tcl): Define variable *internal* DSL
-	  syntaxes using composable parsing grammars. See the
+    * [`djdsl::dada`](dada.tcl): Define variable *internal*  DSL syntaxes. See the [djdsl::dada how-to](doc/dada.adoc).
+	* [`djdsl::opeg`](opeg.tcl): Define variable *external* DSL
+	  syntaxes using composable parsing grammars (PEG). See the
       [djdsl::opeg ada how-to](doc/opeg.adoc).
 	* [`djdsl:: v1e`](v1e.tcl): Define variability models for
       DSL-product lines. See the [djdsl::v1e how-to](doc/v1e.adoc).
