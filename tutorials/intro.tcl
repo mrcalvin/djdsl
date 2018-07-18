@@ -54,6 +54,11 @@ apply {{version code {test ""}} {
   }
 } ::} 0.1 {
 
+  #
+  # == Implementation
+  #
+
+
   package req nx
 
   #
@@ -287,6 +292,10 @@ apply {{version code {test ""}} {
   }
   
 } {
+
+  #
+  # == Doctests
+  #
   
   #
   # === Abstract-syntax constraints
@@ -299,7 +308,7 @@ apply {{version code {test ""}} {
   ? {Lit invariants get} {{${:value} >= 10 && ${:value} <= 100}}
 
   #// constr2 //
-  context: tutorial::Lit \
+  context: intro::Lit \
       inv: {${:value} >= 10 && ${:value} <= 100} \
       inv: {${:value} >= 20 && ${:value} <= 50}
   #// end //
@@ -325,7 +334,7 @@ apply {{version code {test ""}} {
   set internalBuilder [AleBuilder new]
   set expr1 [$internalBuilder from {+ 1 + 2 4}]
   #// end //
-  ? {$expr1 info class} ::tutorial::Add 
+  ? {$expr1 info class} ::intro::Add 
 
   ? {llength [Expr info instances -closure ${internalBuilder}::*]} 5
 
@@ -365,7 +374,7 @@ apply {{version code {test ""}} {
   set externalBuilder [ExternalBuilder new -parser $lp]
   set expr2 [$externalBuilder from {(2 + 4) + 1}]
   #// end //
-  ? {$expr2 info class} ::tutorial::Add 
+  ? {$expr2 info class} ::intro::Add 
   ? {llength [Expr info instances -closure ${externalBuilder}::*]} 5
 
   #
