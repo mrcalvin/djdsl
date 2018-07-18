@@ -65,6 +65,16 @@ namespace eval ::djdsl::lm::test {
       unset -nocomplain v
     }
   }
+
+  test ctx-0 "Basics" -body {
+    set (ctx) [Asset new]
+    catch [list [Collaboration new -childof $(ctx)] new] msg opts
+    lappend () [dict get $opts -errorcode]
+    
+    lappend () [catch [list [LanguageModel create $(ctx)::C] new]]
+    lappend () [expr {[[$(ctx) new c] info class] eq "$(ctx)::C"}]
+
+  } -cleanup $CLEANUP -result "{DJDSL ABSTRACT} 0 1"
   
   test ctx-1.1 "Nesting (assets)" -setup $SETUP -body {
     set (children) [$(lm1) info children -type ::djdsl::lm::AssetElement]

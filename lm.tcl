@@ -62,6 +62,10 @@ apply {{version code {test ""}} {
   }
 } ::} 0.1 {
 
+  #
+  # == Implementation
+  #
+  
   package req nx
 
   nx::Class create Container {
@@ -70,7 +74,7 @@ apply {{version code {test ""}} {
       lreplace $spec[set spec {}] end end contains:alias,optional
     }
     ::nsf::parameter::cache::classinvalidate [current]
-    :protected method contains args {
+    :public method contains args {
       namespace eval [self] { namespace path ::djdsl::lm }
       next
     }
@@ -80,7 +84,20 @@ apply {{version code {test ""}} {
 
   nx::Class create AssetElement -superclasses {Container nx::Class}
   
-  nx::Class create Role -superclasses AssetElement
+  nx::Class create Role -superclasses AssetElement {
+    :public object method create args {
+      set container [uplevel [current callinglevel] {namespace current}]
+      if {[$container info has type LanguageModel]} {
+        throw {DJDSL LM INVALIDEL} "Invalid element: Language models cannot contain roles."
+      }
+      # TODO: overriding [create] breaks namespace setting for
+      # new/create calls, e.g., in contains.  set r [next]; use
+      # [apply] for the time being to correct the namespace context.
+      set r [apply [list {} {next} $container]]
+      return $r
+    }
+  }
+  
   nx::Class create Classifier -superclasses Role
   
   nx::Class create Collaboration -superclasses AssetElement {
@@ -92,7 +109,7 @@ apply {{version code {test ""}} {
     }
   }
   
-  nx::Class create LanguageModel -superclass Collaboration {
+  nx::Class create LanguageModel -superclasses Collaboration {
     :property {owning:object,type=Asset,substdefault "[:info parent]"}
     :public method init {} {
       set body "[self] new -childof ${:owning} {*}\$args"
@@ -231,14 +248,28 @@ apply {{version code {test ""}} {
       Classifier Role
 } {
 
-  # Leads to "::nsf::log Warning {cycle in the mixin graph list detected for class ::nx::Object}"
-  # nx::Object mixins add Testable
-  
-  set ctx [Asset new]
-  ? {[Collaboration new -childof $ctx] new} "Collaboration ::nsf::__#0::__#1 cannot be instantiated directly"
-  ? {catch {[LanguageModel create ${ctx}::C] new}} 0
-  ? {[$ctx new c] info class} ${ctx}::C
+  #
+  # == Doctests
+  #
 
+  #// Leads to "::nsf::log Warning {cycle in the mixin graph list detected for class ::nx::Object}"
+  #// nx::Object mixins add Testable
+
+  # An `Asset` is the mandatory container element for both
+  # `LanguageModel` and `Collaboration` instances. When defining
+  # compositions, in a subsequent step, an `Asset` is referenced (or,
+  # bound) by a `Composition`.
+  # 
+  # The running example roughly follows the storyline behind a Graph
+  # Product Line (GPL), as used in <<FOSPL>> (see, e.g., Chapter X for
+  # some background).
+  #
+  # The `Graphs` asset contains a language model `Graph` and a
+  # collaboration `weighted`.  From the point of view of a GPL
+  # variability model (not shown), the language model maps to and
+  # implements the root or base feature. The collaboration maps to and
+  # implements the option feature `weighted`.
+  
   #// assets //#
   Asset create Graphs {    
     LanguageModel create Graph {
@@ -262,11 +293,75 @@ apply {{version code {test ""}} {
     }
   }
   #// end //#
+
+  # A language model itself contains only `Classifier` instances that
+  # describe the main elements of the primary abstract syntax of a
+  # given DSL (e.g., `Node` and `Edge`).
+  #
+  # A collaboration contains both `Classifier` instances (i.e.,
+  # introducing new abstract-syntax elements such as `Weight`) and
+  # `Role` instances. Roles are refinements of previously introduced
+  # or already present abstract-syntax elements (e.g., `Edge`). Roles
+  # cannot be instantiated directly.
+  #
+  # A `Classifier` or a `Role` instance can contain structural and
+  # behavioural elements, i.e., properties and methods. From the
+  # perspective of an abstract-syntax definition, methods are not
+  # necessary. However, collaborations can be also be used also to
+  # structure the behavioural implementations as optional (composable)
+  # units that back a DSL (e.g., an interpreter or visitor-based
+  # transformations).
+  #
+  # Technically, this conceptual nesting between collaborations and
+  # classifiers/ roles is implemented as nesting the NX objects
+  # representing them. Watch:
   
   ? {[Graphs new graph -name "g"] info class} "::Graphs::Graph"
   ? {[Graphs new weighted] info class} {unable to dispatch sub-method "weighted" of ::Graphs new; valid are: new graph}
   ? {[[Graphs new graph -name "g2"] new node] info class} "::Graphs::Graph::Node"
 
+  #
+  # The definitional content of language models and collaborations is
+  # open for extension using method `contains`.
+  #
+
+  ? {Graphs::Graph contains {
+    Classifier create Label
+  }} "::Graphs::Graph::Label"
+
+  #
+  # Standard NX introspection methods can be used to spell out the
+  # content of a container (assets or collaborations), for example:
+  #
+  
+  ? {lsort [Graphs::Graph info children -type AssetElement]} "::Graphs::Graph::A ::Graphs::Graph::Edge ::Graphs::Graph::Label ::Graphs::Graph::Node"
+
+  #
+  # However, the abstract-syntax content is defined, important
+  # consistency conditions are tested and established. For example,
+  # language models must not contain roles.
+  #
+
+  ? {Graphs::Graph contains {
+    Role create Label
+  }} "Invalid element: Language models cannot contain roles."
+
+  # Object nesting has a number of benefits. It facilitates product-bound
+  # quantification, object cleanup, and it guarantees name-based
+  # qualification for classifiers and roles (`Graphs::Graph::Edge`
+  # vs. `weighted::Edge`). Also note that each container
+  # (collaboration or language model) provides factory methods (`new
+  # graph`, `new weighted`) for its contained classifiers or roles.
+
+  #
+  # A `Composition` is defined to implement one product, mapping to
+  # one configuration valid under the variability model. A composition
+  # itself realises an asset and binds some assets as provides of
+  # language models and collaborations (incl. other compositions!). 
+  #
+  # The GPL configuration for weighted graphs is implemented as
+  # follows:
+  
   #// comp1 //#
   Composition create WeightedGraphs \
       -binds Graphs \
@@ -274,15 +369,28 @@ apply {{version code {test ""}} {
       -features [Graphs::weighted]
   #// end //#
 
+  # A composition such as `WeightedGraphs` can then be used then to
+  # instantiate a configured language model (using a factory method
+  # `new graph`). This language model, in turn, provides factories for
+  # creating configured abstract-syntax elements (e.g.,
+  # weight-labelled edges):
+  
   #// comp2 //#
   set wg [WeightedGraphs new graph -name "wg"]
   set n1 [$wg new node]
-  set n2 [$wg new node]
+  set n2 [$wg new node]  
   set e [$wg new edge \
              -a $n1 \
              -b $n2 \
              -weight [$wg new weight -value 1]]
   #// end //#
+
+  #
+  # Basic NX introspection techniques such as
+  # https://next-scripting.org/xowiki/docs/nx/api/Object/man#27[`info
+  # precedence`] can be used to reveal the composition order between
+  # roles and classifiers, starting from a given composition:
+  #
 
   ? {$wg info precedence} \
       "::WeightedGraphs::Graph ::Graphs::weighted ::Graphs::Graph ::nx::Object"
@@ -292,9 +400,14 @@ apply {{version code {test ""}} {
 
   ? {$e info precedence} \
       "::WeightedGraphs::Graph::Edge ::Graphs::weighted::Edge ::Graphs::weighted::A ::Graphs::Graph::Edge ::nx::Object"
+
+  #
+  # The pool of collaborations that implement optional features
+  # (`coloured`) can be organised across several separate assets
+  # (`Colours`):
+  #
   
   Asset create Colours {
-    puts [namespace current]
     Collaboration create coloured {
       Classifier create Color {
         :property -accessor public {value 0}
@@ -306,6 +419,11 @@ apply {{version code {test ""}} {
       :public method colored {} {return 1}
     }
   }
+
+  #
+  # When defining a composition, all providing assets must be passed
+  # as arguments to `-binds`:
+  #
   
   set ccomp [Composition new -binds [list [Graphs] [Colours]] \
                  -base [Graphs::Graph] \
@@ -314,6 +432,21 @@ apply {{version code {test ""}} {
   set cg [$ccomp new graph -name "cg"]
   ? {$cg info precedence} \
       "${ccomp}::Graph ::Colours::coloured ::Graphs::Graph ::nx::Object"
+
+  #
+  # For a more general background on NX support for
+  # collaboration-based designs, see our paper presented at
+  # <<FOSD>>. Note that the implementation used as part of DjDSL goes
+  # beyond the fundamentals presented in this paper; and deviates in
+  # some details.
+  #
+
+  # [bibliography]
+  # == References
+  # 
+  # - [[[FOSPL]]] Apel, S., Batory, D., Kästner, C., & Saake, G. (2013). Feature-Oriented Software Product Lines (1st). Springer.
+  # - [[[FOSD]]] Sobernig, S., Neumann, G., & Adelsberger, S. (2012). Supporting Multiple Feature Binding Strategies in NX. In Proc. 4th International Workshop on Feature-Oriented Software Development (FOSD'12) (pp. 45--53). ACM.
+
 }
 
 # Local variables:
