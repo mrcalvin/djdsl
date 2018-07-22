@@ -127,6 +127,10 @@ apply {{version code {test ""}} {
   }
 } ::} 0.1 {
 
+  #
+  # == Doctests
+  #
+
   package req tclbdd
     
   nx::Class create Model {
@@ -811,6 +815,11 @@ void:	_	     <- <space>*;
   namespace export Model Choice Feature Constraint
 
 } {
+
+  #
+  # == Doctests
+  #
+  
   #
   # A small excerpt from the GPL feature model, defined using the v1e
   # textual notation.
@@ -921,91 +930,66 @@ void:	_	     <- <space>*;
     }
   }]
 
-
-  if {1} {
-    $constrainedModel2 addFromScript {
-      #// constr3 //
-      Choice with -lower 1 -upper 2 {
-        Feature with {
-          Choice with -lower 0 -upper 0 {
-            Feature with -name "MST"
-          }
+  $constrainedModel2 addFromScript {
+    #// constr3 //
+    Choice with -lower 1 -upper 2 {
+      Feature with {
+        Choice with -lower 0 -upper 0 {
+          Feature with -name "MST"
         }
-        Feature with -name "weighted"
       }
+      Feature with -name "weighted"
     }
     #// end //
-  } else {
-    set f2 [$constrainedModel2 define Feature -name "MST"]
-    set ch2 [$constrainedModel2 define Choice -lower 0 -upper 0 -candidates $f2]
-    set f1 [$constrainedModel2 define Feature -owned $ch2]
-    set f3 [$constrainedModel2 define Feature -name "weighted"]
-    set ch1 [$constrainedModel2 define Choice -lower 1 -upper 2 -candidates [list $f1 $f3]]
-    
-    $constrainedModel2 choices add $ch1
-
-    ? {llength [$constrainedModel2 choices get]} 2
   }
   
   ? {$constrainedModel2 nrValidConfigurations} 6
   
-  ? {$constrainedModel getValidConfigurations [$constrainedModel nrValidConfigurations]} \
-      [list Graph \
-           {Graph weighted} \
-           {Graph ShortestPath Algorithm} \
-           {Graph ShortestPath Algorithm weighted} \
-           {Graph MST Algorithm weighted} \
-           {Graph MST ShortestPath Algorithm weighted}]
+  ? {$constrainedModel getValidConfigurations [$constrainedModel nrValidConfigurations]} {Graph {Graph weighted} {Graph ShortestPath Algorithm} {Graph ShortestPath Algorithm weighted} {Graph MST Algorithm weighted} {Graph MST ShortestPath Algorithm weighted}}
   
-  ? {$constrainedModel2 getValidConfigurations [$constrainedModel2 nrValidConfigurations]} \
-      [list Graph \
-           {Graph weighted} \
-           {Graph ShortestPath Algorithm} \
-           {Graph ShortestPath Algorithm weighted} \
-           {Graph MST Algorithm weighted} \
-           {Graph MST ShortestPath Algorithm weighted}]
-
-  # TODO:
-  # ? {$constrainedModel2 equiv $constrainedModel} 1; # === BDD1 BDD2
-
-  # TODO: simplify implementation using sth. akin of
-  #   nx::Class create Model; use the Model instance as visitor?
-  # nx::Class create Model::Element {
-  #     :protected method __object_configureparameter {} {
-  # 	set spec [next]
-  # 	lreplace $spec[set spec {}] end end foo:optional,alias
-  #     }
-  #     ::nsf::parameter::cache::classinvalidate [current]
-  #     :protected method foo {script} {
-  # 	apply [list {} $script ::]
-  #     # ${:model} eval $script
-  #     }
-  #     :public method init {} {
-  # 	puts [:info class]([self])=init
-  #     }
-  # }
+  ? {$constrainedModel2 getValidConfigurations [$constrainedModel2 nrValidConfigurations]} {Graph {Graph weighted} {Graph ShortestPath Algorithm} {Graph ShortestPath Algorithm weighted} {Graph MST Algorithm weighted} {Graph MST ShortestPath Algorithm weighted}}
   
-  # nx::Class create Feature -superclasses Model::Element {
-  #     :property name
-  #     :protected method foo {script} {
-  # 	next
-  #     }
-  # }
-  
-  # nx::Class create Choice -superclasses Model::Element {
-  #     :property upper
-  #     :property lower
-  #     :protected method foo {script} {
-  # 	next
-  #     }
-  # }
-  
-  # Feature new -name "X" {
-  #     Choice new -upper 1 -lower 2 {
-  # 	Feature new -name "Z"
-  #     }
-  # }  
 }
+
+# TODO:
+# ? {$constrainedModel2 equiv $constrainedModel} 1; # === BDD1 BDD2
+# TODO: simplify implementation using sth. akin of
+#   nx::Class create Model; use the Model instance as visitor?
+# nx::Class create Model::Element {
+#     :protected method __object_configureparameter {} {
+# 	set spec [next]
+# 	lreplace $spec[set spec {}] end end foo:optional,alias
+#     }
+#     ::nsf::parameter::cache::classinvalidate [current]
+#     :protected method foo {script} {
+# 	apply [list {} $script ::]
+#     # ${:model} eval $script
+#     }
+#     :public method init {} {
+# 	puts [:info class]([self])=init
+#     }
+# }
+
+# nx::Class create Feature -superclasses Model::Element {
+#     :property name
+#     :protected method foo {script} {
+# 	next
+#     }
+# }
+
+# nx::Class create Choice -superclasses Model::Element {
+#     :property upper
+#     :property lower
+#     :protected method foo {script} {
+# 	next
+#     }
+# }
+
+# Feature new -name "X" {
+#     Choice new -upper 1 -lower 2 {
+# 	Feature new -name "Z"
+#     }
+# }  
 
 # Local variables:
 #    mode: tcl
