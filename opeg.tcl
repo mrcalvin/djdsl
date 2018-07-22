@@ -2976,9 +2976,10 @@ state active
     }
   }]]]
 
-  ? {$dotParser parse $str} [list \
-                                 nodes {{1st Edition} {2nd Edition} {3rd Edition}} \
-                                 edges {{{1st Edition} {2nd Edition}} {{2nd Edition} {3rd Edition}}}]
+  ? {$dotParser parse $str} {
+    nodes {{1st Edition} {2nd Edition} {3rd Edition}}
+    edges {{{1st Edition} {2nd Edition}} {{2nd Edition} {3rd Edition}}}
+  }
 
   #
   # === Anticipated extension
