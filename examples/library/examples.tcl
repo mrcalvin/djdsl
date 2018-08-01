@@ -2,32 +2,14 @@
 
 package req Tcl 8.6
 
-apply {{version code {test ""}} {
+apply {{version prj code {test ""}} {
   set script [file normalize [info script]]
   set modver [file root [file tail $script]]
   lassign [split $modver -] ns relVersion
-  # set prj [file tail [file dirname $script]]
-  set paths [dict create]
-  set scriptPath [file split [file dirname $script]]
-  dict set paths {*}$scriptPath $ns
-  set pwdPath [file split [pwd]]
-  if {![dict exists $paths {*}$pwdPath]} {
-    throw {NSF MODULE OUTSIDE} "NSF module called outside the project tree."
-  }
-  set pwdPathLength [llength $pwdPath]
-  set scriptPathLength [llength $scriptPath]
-  if {$pwdPathLength == $scriptPathLength} {
-    set prj [lindex $pwdPathLength end]
-  } else {
-    set prj [join [lrange $scriptPath [expr {$pwdPathLength-1}] end] "::"]
-  }
   
   if {$relVersion ne ""} {
     set version $relVersion
   }
-
-  package provide ${prj}::$ns $version
-  # namespace eval ${prj}::$ns $code
 
   if {[info exists ::argv0] && $::argv0 eq [uplevel 1 {info script}]} {
     if {"--release" in $::argv} {
@@ -78,9 +60,10 @@ apply {{version code {test ""}} {
       }
     }
   } else {
+    package provide ${prj}::$ns $version
     namespace eval ${prj}::$ns $code
   }
-} ::} 0.1 {
+} ::} 0.1 djdsl {
 
   package req djdsl::lm
   namespace import ::djdsl::lm::*
@@ -269,7 +252,7 @@ apply {{version code {test ""}} {
   Asset create GuardedBehaviours {
     Collaboration create StateMachine {
       Role create Transition {
-        namespace import ::djdsl::examples::models::Expressions;
+        namespace import ::djdsl::examples::Expressions;
         :property -accessor public \
             guard:object,type=[Expressions]::Model::Expression {
               :public object method value=isSet {obj prop} {

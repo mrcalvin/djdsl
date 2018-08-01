@@ -1,19 +1,37 @@
 # -*- Tcl -*-
+#
+# MIT License
+#
+# Copyright (c) 2017, 2018 Stefan Sobernig <stefan.sobernig@wu.ac.at>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 package req Tcl 8.6
 
-apply {{version code {test ""}} {
+apply {{version prj code {test ""}} {
   set script [file normalize [info script]]
   set modver [file root [file tail $script]]
   lassign [split $modver -] ns relVersion
-  set prj [file tail [file dirname $script]]
   
   if {$relVersion ne ""} {
     set version $relVersion
   }
-
-  package provide ${prj}::$ns $version
-  # namespace eval ${prj}::$ns $code
 
   if {[info exists ::argv0] && $::argv0 eq [uplevel 1 {info script}]} {
     if {"--release" in $::argv} {
@@ -34,6 +52,10 @@ apply {{version code {test ""}} {
         set ::argv [lsearch -exact -inline -all -not $::argv "--print"]
       }
     } else {
+
+      set prj "djdsl"
+      package provide ${prj}::$ns $version
+      
       if {$test ne ""} {
         package req tcltest
         ::tcltest::configure {*}$::argv
@@ -64,9 +86,10 @@ apply {{version code {test ""}} {
       }
     }
   } else {
+    package provide ${prj}::$ns $version
     namespace eval ${prj}::$ns $code
-  }
-} ::} 0.1 {
+  }  
+} ::} 0.1 djdsl {
 
   #
   # == Implementation
@@ -368,8 +391,8 @@ apply {{version code {test ""}} {
 
   package req nx
 
-  package req djdsl::examples::models
-  namespace import ::djdsl::examples::models::*
+  package req djdsl::examples
+  namespace import ::djdsl::examples::*
 
   #
   # Introductory example: A configuration DSL à la Ansible playbooks.
@@ -441,7 +464,7 @@ play(
   
   set pb [pbb get $playbook]
 
-  ? {$pb info class} ::djdsl::examples::models::Ansible::Playbook
+  ? {$pb info class} ::djdsl::examples::Ansible::Playbook
   ? {llength [$pb plays get]} 2
   ? {[[lindex [$pb plays get] 1] tasks get] yum get} \
       "-name postgresql -state latest"
@@ -454,7 +477,7 @@ play(
   # === Abstract syntax
   #
   # The language models are imported from the auxiliary
-  # +djdsl::examples::models+ package.
+  # +djdsl::examples+ package.
 
   
   #

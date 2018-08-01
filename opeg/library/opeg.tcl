@@ -1,88 +1,38 @@
+# -*- Tcl -*-
+#
+# MIT License
+#
+# Copyright (c) 2017, 2018 Stefan Sobernig <stefan.sobernig@wu.ac.at>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 package req nx
-package require pt::rde::nx
-package req pt::peg::op
-
-set fh [open [file join [file dirname [info script]] "opeg.peg"] r]
-set g [read $fh]
-catch {close $fh}
-
-namespace eval ::pt::rde {
-
-  #
-  # PARAM/NX runtime: pt::rde::nx
-  #
-  
-  nx eval {
-
-    :public method parset {script} {
-      :reset {}
-      :data $script
-      :MAIN ; # Entrypoint for the generated code.
-      :complete
-    }
-
-    :public object method pgen {frontendPeg} {
-      
-      # We might also use opeg::Rewriter here, as the OO wrapper, but
-      # this would render pgen dependent on the opeg package.
-      set ser [pt::peg::from::peg convert $frontendPeg]
-      
-      ## initialize to NX/PEG backend defaults or dummies
-      pt::tclparam::configuration::nx def _ _ _  {pt::peg::to::tclparam configure}
-      
-      ## strip down to just the core script fragment
-      pt::peg::to::tclparam configure -template {@code@}
-      # puts stderr ser=$ser
-      set body [pt::peg::to::tclparam convert $ser]
-      # puts BODY=$body
-      set cls [nx::Class new -superclasses [self] -- $body]
-      return $cls
-    }
-    
-    #
-    # An auxiliary tree printer facility, for all NX-based parsers.
-    #
-
-    :public method print {input} {
-      set ast [:parset $input]
-      :printNode {*}$ast
-    }
-    
-    :method printNode {{-indent ""} -last:switch symbol start end args} {
-      set nrChildren [llength $args]
-      set parent [expr {$nrChildren ? "+" : "-"}]
-      set pipe [expr {$indent ne "" ? "|" : ""}]
-      set lastChild  [expr {$last ? "\\" : $pipe}]
-      set output [string cat $indent $lastChild "-" $parent "="]
-      append indent [expr {$last ? "  " : "$pipe "}]
-      
-      puts "$output $symbol :: $start $end"
-      
-      for {set i 0} {$i < $nrChildren} {incr i} {
-        set pargs [list -indent $indent]
-        if {$i == $nrChildren-1} {
-          lappend pargs -last
-        }
-        :printNode {*}$pargs {*}[lindex $args $i]
-      }
-    } 
-  }
-}
-
 package req Tcl 8.6
 
-apply {{version code {test ""}} {
+apply {{version prj code {test ""}} {
   set script [file normalize [info script]]
   set modver [file root [file tail $script]]
   lassign [split $modver -] ns relVersion
-  set prj [file tail [file dirname $script]]
   
   if {$relVersion ne ""} {
     set version $relVersion
   }
-
-  package provide ${prj}::$ns $version
-  # namespace eval ${prj}::$ns $code
 
   if {[info exists ::argv0] && $::argv0 eq [uplevel 1 {info script}]} {
     if {"--release" in $::argv} {
@@ -103,6 +53,10 @@ apply {{version code {test ""}} {
         set ::argv [lsearch -exact -inline -all -not $::argv "--print"]
       }
     } else {
+
+      set prj "djdsl"
+      package provide ${prj}::$ns $version
+      
       if {$test ne ""} {
         package req tcltest
         ::tcltest::configure {*}$::argv
@@ -133,10 +87,10 @@ apply {{version code {test ""}} {
       }
     }
   } else {
+    package provide ${prj}::$ns $version
     namespace eval ${prj}::$ns $code
-  }
-  
-} ::} 0.1 {
+  }  
+} ::} 0.1 djdsl {
 
   #
   # == Implementation
@@ -147,7 +101,146 @@ apply {{version code {test ""}} {
   #
   # TODO: switch to one-time generation, once the OPEG grammar itself
   # has stabilized; and we support bootstrapping.
-  # 
+  #
+
+  package require pt::rde::nx
+  package req pt::peg::op
+  
+  # set fh [open [file join [file dirname [info script]] "opeg.peg"] r]
+  # set g [read $fh]
+  # catch {close $fh}
+
+  set g {PEG an_opeg_grammar (Grammar)
+    leaf: ALNUM         <- '<' 'a' 'l' 'n' 'u' 'm' '>' WHITESPACE ;
+    leaf: ALPHA         <- '<' 'a' 'l' 'p' 'h' 'a' '>' WHITESPACE ;
+    leaf: AND           <- '&' WHITESPACE ;
+    void: APOSTROPH     <- '\'' ;
+    leaf: ASCII         <- '<' 'a' 's' 'c' 'i' 'i' '>' WHITESPACE ;
+    Attribute           <- (VOID / LEAF) COLON ;
+    Char                <- CharSpecial / CharOctalFull / CharOctalPart / CharUnicode / CharUnescaped ;
+    leaf: CharOctalFull <- '\\' [0-2] [0-7] [0-7] ;
+    leaf: CharOctalPart <- '\\' [0-7] [0-7]? ;
+    leaf: CharSpecial   <- '\\' ('n' / 'r' / 't' / '\'' / '\"' / '\[' / '\]' / '\\') ;
+    leaf: CharUnescaped <- !'\\' . ;
+    leaf: CharUnicode   <- '\\' 'u' <xdigit> (<xdigit> (<xdigit> <xdigit>?)?)? ;
+    Class               <- OPENB (!CLOSEB Range)* CLOSEB WHITESPACE ;
+    Ctor                <- OPENCB WHITESPACE Command WHITESPACE OPENCB WHITESPACE ;
+    void: CLOSE         <- ')' WHITESPACE ;
+  void: CLOSEB        <- '\]' ;
+  void: COLON         <- ':' WHITESPACE ;
+  void: COMMENT       <- '#' (!EOL .)* EOL ;
+  leaf: CONTROL       <- '<' 'c' 'o' 'n' 't' 'r' 'o' 'l' '>' WHITESPACE ;
+  leaf: Command       <- Word (WHITESPACE Word)*;
+  void: DAPOSTROPH    <- '\"' ;
+  leaf: DDIGIT        <- '<' 'd' 'd' 'i' 'g' 'i' 't' '>' WHITESPACE ;
+  Definition          <- Attribute? Identifier IS Expression SEMICOLON ;
+  leaf: DIGIT         <- '<' 'd' 'i' 'g' 'i' 't' '>' WHITESPACE ;
+  leaf: DOT           <- '.' WHITESPACE ;
+  void: EOF           <- !. ;
+  void: EOL           <- '\n' / '\r' ;
+  Expression          <- Sequence (SLASH Sequence)* ;
+  void: Final         <- 'E' 'N' 'D' WHITESPACE SEMICOLON WHITESPACE ;
+  Grammar             <- WHITESPACE Header Definition* Final EOF ;
+  leaf: GRAPH         <- '<' 'g' 'r' 'a' 'p' 'h' '>' WHITESPACE ;
+  Header              <- PEG Identifier StartExpr ;
+  # leaf: Ident         <- ('_' / <alpha>) ('_' / <alnum>)* ;
+  leaf: Ident         <- '::' <alnum>+ ('::' / <alnum>+)* / ('_' / <alpha>) ('_' / <alnum>)* ;
+  Identifier          <- Ident WHITESPACE ;
+  Field    	    <- Ident WHITESPACE COLON WHITESPACE Suffix ;
+  void: IS            <- '<' '-' WHITESPACE ;
+  leaf: LEAF          <- 'l' 'e' 'a' 'f' WHITESPACE ;
+  Literal             <- APOSTROPH (!APOSTROPH Char)* APOSTROPH WHITESPACE / DAPOSTROPH (!DAPOSTROPH Char)* DAPOSTROPH WHITESPACE ;
+  leaf: LOWER         <- '<' 'l' 'o' 'w' 'e' 'r' '>' WHITESPACE ;
+  leaf: NOT           <- '!' WHITESPACE ;
+  void: OPEN          <- '(' WHITESPACE ;
+                           void: OPENB         <- '\[' ;
+  void: OPENCB        <- '`' ;
+  void: PEG           <- 'O' 'P' 'E' 'G' !('_' / ':' / <alnum>) WHITESPACE ;
+  leaf: PLUS          <- '+' WHITESPACE ;
+        Prefix        <-  (AND / NOT)? Suffix ;
+                           Primary       <- ALNUM / ALPHA / ASCII / CONTROL / DDIGIT / DIGIT / GRAPH / LOWER / PRINTABLE / PUNCT / SPACE / UPPER / WORDCHAR / XDIGIT / Identifier / OPEN Expression CLOSE / Literal / Class / DOT ;
+  leaf: PRINTABLE     <- '<' 'p' 'r' 'i' 'n' 't' '>' WHITESPACE ;
+  leaf: PUNCT         <- '<' 'p' 'u' 'n' 'c' 't' '>' WHITESPACE ;
+  leaf: QUESTION      <- '?' WHITESPACE ;
+        Range         <- Char TO Char / Char ;
+  void: SEMICOLON     <- ';' WHITESPACE ;
+        Sequence      <- Ctor? (Field / Prefix)+ ;
+  void: SLASH         <- '/' WHITESPACE ;
+  leaf: SPACE         <- '<' 's' 'p' 'a' 'c' 'e' '>' WHITESPACE ;
+  leaf: STAR          <- '*' WHITESPACE ;
+        StartExpr     <- OPEN Expression CLOSE ;
+        Suffix        <- Primary (QUESTION / STAR / PLUS)? ;
+  void: TO            <- '-' ;
+  leaf: UPPER         <- '<' 'u' 'p' 'p' 'e' 'r' '>' WHITESPACE ;
+  leaf: VOID          <- 'v' 'o' 'i' 'd' WHITESPACE ;
+  void: WHITESPACE    <- (<space> / COMMENT)* ;
+  leaf: WORDCHAR      <- '<' 'w' 'o' 'r' 'd' 'c' 'h' 'a' 'r' '>' WHITESPACE ;
+  leaf: Word          <- '$'? <wordchar>+ / '{' Command '}'; 
+  leaf: XDIGIT        <- '<' 'x' 'd' 'i' 'g' 'i' 't' '>' WHITESPACE ;
+  END;}
+  
+  namespace eval ::pt::rde {
+    
+    #
+    # PARAM/NX runtime: pt::rde::nx
+    #
+    
+    nx eval {
+      
+      :public method parset {script} {
+        :reset {}
+        :data $script
+        :MAIN ; # Entrypoint for the generated code.
+        :complete
+      }
+      
+      :public object method pgen {frontendPeg} {
+        
+        # We might also use opeg::Rewriter here, as the OO wrapper, but
+        # this would render pgen dependent on the opeg package.
+        set ser [pt::peg::from::peg convert $frontendPeg]
+        
+        ## initialize to NX/PEG backend defaults or dummies
+        pt::tclparam::configuration::nx def _ _ _  {pt::peg::to::tclparam configure}
+        
+        ## strip down to just the core script fragment
+        pt::peg::to::tclparam configure -template {@code@}
+        # puts stderr ser=$ser
+        set body [pt::peg::to::tclparam convert $ser]
+        # puts BODY=$body
+        set cls [nx::Class new -superclasses [self] -- $body]
+        return $cls
+      }
+      
+      #
+      # An auxiliary tree printer facility, for all NX-based parsers.
+      #
+      
+      :public method print {input} {
+        set ast [:parset $input]
+        :printNode {*}$ast
+      }
+      
+      :method printNode {{-indent ""} -last:switch symbol start end args} {
+        set nrChildren [llength $args]
+        set parent [expr {$nrChildren ? "+" : "-"}]
+        set pipe [expr {$indent ne "" ? "|" : ""}]
+        set lastChild  [expr {$last ? "\\" : $pipe}]
+        set output [string cat $indent $lastChild "-" $parent "="]
+        append indent [expr {$last ? "  " : "$pipe "}]
+        
+        puts "$output $symbol :: $start $end"
+        
+        for {set i 0} {$i < $nrChildren} {incr i} {
+          set pargs [list -indent $indent]
+          if {$i == $nrChildren-1} {
+            lappend pargs -last
+          }
+          :printNode {*}$pargs {*}[lindex $args $i]
+        }
+      } 
+    }
+  }
 
   package require pt::pgen
   try [pt::pgen peg $g nx -class Parser -name "OPEG Grammar"] on return {} {;}
@@ -2976,10 +3069,7 @@ state active
     }
   }]]]
 
-  ? {$dotParser parse $str} {
-    nodes {{1st Edition} {2nd Edition} {3rd Edition}}
-    edges {{{1st Edition} {2nd Edition}} {{2nd Edition} {3rd Edition}}}
-  }
+  ? {$dotParser parse $str} {nodes {{1st Edition} {2nd Edition} {3rd Edition}} edges {{{1st Edition} {2nd Edition}} {{2nd Edition} {3rd Edition}}}}
 
   #
   # === Anticipated extension

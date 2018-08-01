@@ -1,0 +1,17 @@
+loadfile.tcl:
+	echo 'package ifneeded djdsl::$(PKG_NAME) $(VER) [list source $(LIB) $(INIT)]' > loadfile.tcl
+
+doctest: TESTFLAGS = -loadfile loadfile.tcl
+doctest: loadfile.tcl
+	${TESTENV} $(TCLSH) library/${SCLIBSRC} $(TESTFLAGS)
+
+dada-test: TESTFLAGS = -loadfile loadfile.tcl
+dada-test: doctest test-spot
+
+dada-distclean: distclean-spot
+	rm -f loadfile.tcl
+
+require:
+	@echo 'djdsl::$(PKG_NAME) $(VER)'
+
+.PHONY: doctest loadfile

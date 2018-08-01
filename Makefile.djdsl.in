@@ -1,0 +1,54 @@
+DJDSL_TESTABLES = lm ctx dada opeg v1e
+DJDSL_PARTS = examples ${DJDSL_TESTABLES}
+
+djdsl: build
+
+configure: 
+	@for i in $(DJDSL_PARTS); do \
+	    if ! test -f $$i/Makefile; then \
+		(cd $$i && ./configure ${SPOTO_ARGS}); \
+	    fi; \
+	done
+
+djdsl-build:
+	$(INSTALL_LIBRARY) ${srcdir}/library/${SCLIBSRC} ${SCLIB}
+
+build: configure all
+	deps='' && \
+	for i in $(DJDSL_PARTS); do \
+            (cd $$i && make); \
+	    dep=$$(cd $$i && make require); \
+	    deps="$$deps $$dep"; \
+	done \
+        && echo $$deps >> ${SCLIB}
+
+djdsl-clean: clean-spot
+	@for i in $(DJDSL_PARTS); do \
+	    (cd $$i && make clean); \
+	done
+	if test X"${SCLIB}" != X"" && test -f "${SCLIB}" ; then \
+	    rm -f "${SCLIB}" ; \
+	fi
+
+
+djdsl-distclean: distclean-spot
+	@for i in $(DJDSL_PARTS); do \
+	    (cd $$i && make distclean); \
+	done
+
+djdsl-test: build
+	@for i in $(DJDSL_TESTABLES); do \
+	    (cd $$i && make test); \
+	done
+
+install: build install-script-lib
+	@for i in $(DJDSL_PARTS); do \
+	    (cd $$i && make install DESTDIR="$(DESTDIR)"); \
+	done
+
+djdsl-shell: build
+	@ ${TCLSH_PROG} $(SCRIPT)
+
+djdsl-dist: configure dist-spot
+
+.PHONY: djdsl configure djdsl-clean djdsl-distclean djdsl-test djdsl-shell djdsl-dist

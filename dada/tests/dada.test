@@ -2,14 +2,14 @@ package require tcltest
 ::tcltest::configure {*}$argv
 
 package require djdsl::dada
-package require djdsl::examples::models
+package require djdsl::examples
 
 
 
 namespace eval ::djdsl::dada::test {
   namespace import ::tcltest::*
   namespace import ::djdsl::dada::*
-  namespace import ::djdsl::examples::models::*
+  namespace import ::djdsl::examples::*
   
   
   variable SETUP {

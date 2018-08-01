@@ -1,0 +1,4 @@
+require:
+	@echo 'djdsl::$(PKG_NAME) $(VER)'
+
+.PHONY: require

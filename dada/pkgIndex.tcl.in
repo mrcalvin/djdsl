@@ -1,0 +1,2 @@
+# Spot o' Conf pkgIndex.tcl.in
+package ifneeded @PKG_NAME@ @PKG_VER@ [list source [file join $dir @LIB@] @INIT@]
