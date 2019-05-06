@@ -58,7 +58,7 @@ apply {{version prj code {test ""}} {
         ::tcltest::configure {*}$::argv
         ::tcltest::loadTestedCommands
         
-        namespace eval ${prj}::$ns $code
+        uplevel #0 [list namespace eval ${prj}::$ns $code]
         namespace eval ::${prj}::${ns}::test {
           namespace import ::tcltest::*
 
@@ -76,7 +76,7 @@ apply {{version prj code {test ""}} {
         }
         
         namespace eval ::${prj}::${ns}::test [list namespace import ::${prj}::${ns}::*]
-        namespace eval ::${prj}::${ns}::test $test
+        uplevel #0 [list namespace eval ::${prj}::${ns}::test $test]
         
         namespace eval ::${prj}::${ns}::test cleanupTests
         namespace delete ::${prj}::${ns}::test

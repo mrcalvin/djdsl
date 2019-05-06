@@ -53,7 +53,6 @@ apply {{version prj code {test ""}} {
       }
     } else {
 
-      set prj "djdsl"
       package provide ${prj}::$ns $version
       
       if {$test ne ""} {
@@ -61,7 +60,7 @@ apply {{version prj code {test ""}} {
         ::tcltest::configure {*}$::argv
         ::tcltest::loadTestedCommands
         
-        namespace eval ${prj}::$ns $code
+        uplevel #0 [list namespace eval ${prj}::$ns $code]
         namespace eval ::${prj}::${ns}::test {
           namespace import ::tcltest::*
 
@@ -79,7 +78,7 @@ apply {{version prj code {test ""}} {
         }
         
         namespace eval ::${prj}::${ns}::test [list namespace import ::${prj}::${ns}::*]
-        namespace eval ::${prj}::${ns}::test $test
+        uplevel #0 [list namespace eval ::${prj}::${ns}::test $test]
         
         namespace eval ::${prj}::${ns}::test cleanupTests
         namespace delete ::${prj}::${ns}::test
@@ -89,7 +88,7 @@ apply {{version prj code {test ""}} {
     package provide ${prj}::$ns $version
     namespace eval ${prj}::$ns $code
   }  
-} ::} 0.1 djdsl {
+} ::} 0.1 "djdsl" {
 
   #
   # == Implementation

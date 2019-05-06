@@ -61,8 +61,9 @@ apply {{version prj code {test ""}} {
         package req tcltest
         ::tcltest::configure {*}$::argv
         ::tcltest::loadTestedCommands
-        
-        namespace eval ${prj}::$ns $code
+
+        # uplevel makes the [apply] frame invisible to the module script
+        uplevel #0 [list namespace eval ${prj}::$ns $code]
         namespace eval ::${prj}::${ns}::test {
           namespace import ::tcltest::*
 
@@ -80,7 +81,9 @@ apply {{version prj code {test ""}} {
         }
         
         namespace eval ::${prj}::${ns}::test [list namespace import ::${prj}::${ns}::*]
-        namespace eval ::${prj}::${ns}::test $test
+
+        # uplevel makes the [apply] frame invisible to the test script
+        uplevel #0 [list namespace eval ::${prj}::${ns}::test $test]
         
         namespace eval ::${prj}::${ns}::test cleanupTests
         namespace delete ::${prj}::${ns}::test
@@ -1746,8 +1749,9 @@ apply {{version prj code {test ""}} {
 
     :public method parse {script} {
 
-      set ns [uplevel [current activelevel] namespace current]
-
+      # set ns [uplevel [current callinglevel] namespace current]
+      set ns [:uplevel {namespace current}]
+      
       set ast [:parset $script]
 
       # TODO: Processing should happen in the factory, no calls back
