@@ -1,6 +1,6 @@
 # DjDSL
 
-Define variable and mixed, internal and external, domain-specific
+Develop variable and mixed, internal and external, domain-specific
 software languages. `djdsl` is provided as a bundle of Tcl modules
 (TMs).
 
