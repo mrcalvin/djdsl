@@ -2,11 +2,11 @@
 
 package req Tcl 8.6
 
-apply {{version code {test ""}} {
-   set script [file normalize [info script]]
+apply {{version prj code {test ""}} {
+  set script [file normalize [info script]]
   set modver [file root [file tail $script]]
   lassign [split $modver -] ns relVersion
-  set prj [file tail [file dirname $script]]
+  # set prj [file tail [file dirname $script]]
   
   if {$relVersion ne ""} {
     set version $relVersion
@@ -39,7 +39,7 @@ apply {{version code {test ""}} {
         ::tcltest::configure {*}$::argv
         ::tcltest::loadTestedCommands
         
-        namespace eval ${prj}::$ns $code
+        uplevel #0 [list namespace eval ${prj}::$ns $code]
         namespace eval ::${prj}::${ns}::test {
           namespace import ::tcltest::*
 
@@ -57,7 +57,7 @@ apply {{version code {test ""}} {
         }
         
         namespace eval ::${prj}::${ns}::test [list namespace import ::${prj}::${ns}::*]
-        namespace eval ::${prj}::${ns}::test $test
+        uplevel #0 [list namespace eval ::${prj}::${ns}::test $test]
         
         namespace eval ::${prj}::${ns}::test cleanupTests
         namespace delete ::${prj}::${ns}::test
@@ -66,7 +66,7 @@ apply {{version code {test ""}} {
   } else {
     namespace eval ${prj}::$ns $code
   }
-} ::} 0.1 {
+} ::} 0.1 "djdsl" {
 
   #
   # == Implementation
