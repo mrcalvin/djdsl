@@ -5,9 +5,7 @@ djdsl: build
 
 configure: 
 	@for i in $(DJDSL_PARTS); do \
-	    if ! test -f $$i/Makefile; then \
 		(cd $$i && ./configure ${SPOTO_ARGS}); \
-	    fi; \
 	done
 
 djdsl-build:
