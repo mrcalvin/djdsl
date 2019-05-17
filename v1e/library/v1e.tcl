@@ -2,7 +2,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2017, 2018 Stefan Sobernig <stefan.sobernig@wu.ac.at>
+# Copyright (c) 2017-2019 Stefan Sobernig <stefan.sobernig@wu.ac.at>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -88,10 +88,12 @@ apply {{version prj code {test ""}} {
     namespace eval ${prj}::$ns $code
   }
 } ::} 0.1 djdsl {
-
+  
   #
   # == Implementation
   #
+
+  package req nx 2.3
 
   package require pt::pgen
   package require pt::rde::nx
@@ -170,10 +172,6 @@ apply {{version prj code {test ""}} {
     :property -accessor protected -incremental owned:object,type=Model::Element,1..* {
       :public object method value=set {obj prop value:object,type=::djdsl::v1e::Model::Element,1..*} {
         dict keys [next [list $obj $prop [concat {*}[lmap a $value b {} {list $a $b}]]]]
-      }
-
-      :public object method value=isSet {obj prop args} {
-        $obj eval [list info exists :$prop]
       }
       
       :public object method value=get {obj prop} {
@@ -262,7 +260,7 @@ apply {{version prj code {test ""}} {
 
 
     :public method destroy {} {
-      if {[:owned isSet]} {
+      if {[:owned exists]} {
         foreach el [:owned get] {
           $el destroy
         }
@@ -433,7 +431,7 @@ apply {{version prj code {test ""}} {
                   continue
                 } else {
                   set obj [lindex ${:vars} [incr _ -1]]
-                  if {[$obj name isSet]} {
+                  if {[$obj name exists]} {
                     $obj name get
                   } else {
                     continue; # $obj;
@@ -480,7 +478,7 @@ apply {{version prj code {test ""}} {
           # FIX:
           # puts stderr >>>[namespace current],[namespace which Choice],[uplevel 1 {namespace current}]
           foreach c [${:model} getOwnedElements ::djdsl::v1e::Choice] {
-            if {[$c context isSet]} {
+            if {[$c context exists]} {
               set p [$c context get]
             } else {
               set p ${:model}
@@ -684,7 +682,7 @@ apply {{version prj code {test ""}} {
             lassign $dat varIdx lo hi
             set feat [lindex ${:vars} $varIdx]
             set label ""; # unnamed features (helpers) remain blank
-            if {[$feat name isSet]} {
+            if {[$feat name exists]} {
               set label [$feat name get]
             }
             append dot "$node \[label=\"$label\"\];" \n
@@ -755,11 +753,7 @@ apply {{version prj code {test ""}} {
 
   nx::Class create Choice -superclasses Model::Element {
 
-    :property -accessor public context:object,type=Feature {
-      :public object method value=isSet {obj args} {
-        ::nsf::var::exists $obj context
-      }
-    }
+    :property -accessor public context:object,type=Feature
     
     :property -accessor public candidates:object,type=Feature,1..*
 
@@ -768,7 +762,7 @@ apply {{version prj code {test ""}} {
 
     :public method register {} {
       foreach c ${:candidates} {
-        if {![$c eval {info exists :owning}]} {
+        if {![$c owning exists]} {
           $c owning set [self]
         }
       }
@@ -784,11 +778,7 @@ apply {{version prj code {test ""}} {
   }
   
   nx::Class create Feature -superclasses Model::Element {
-    :property -accessor public name {
-      :public object method value=isSet {obj args} {
-        ::nsf::var::exists $obj name
-      }
-    }
+    :property -accessor public name
     
     :property -accessor public owning:object,type=Choice
     :property -accessor public -incremental owned:object,type=Choice,0..*
