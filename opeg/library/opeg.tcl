@@ -2,7 +2,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2017, 2018 Stefan Sobernig <stefan.sobernig@wu.ac.at>
+# Copyright (c) 2017-2019 Stefan Sobernig <stefan.sobernig@wu.ac.at>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +22,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-package req nx
 package req Tcl 8.6
 
 apply {{version prj code {test ""}} {
@@ -95,6 +94,8 @@ apply {{version prj code {test ""}} {
   }  
 } ::} 0.1 djdsl {
 
+  package req nx 2.3
+  
   #
   # == Implementation
   #
@@ -411,7 +412,7 @@ apply {{version prj code {test ""}} {
       }
 
       :public method exists {nt} {
-        ${:grammar} rules isSet $nt
+        ${:grammar} rules exists $nt
       }
 
       :public method remove {args} {
@@ -575,14 +576,14 @@ apply {{version prj code {test ""}} {
     :property -accessor public -incremental rules {
       :public object method value=set {obj prop value} {        
 
-        if {[$obj $prop isSet]} {
+        if {[$obj $prop exists]} {
           set value [dict merge [$obj $prop get] $value]
         }
         
         next [list $obj $prop $value]
       }
       
-      :public object method value=isSet {obj prop nt:optional} {
+      :public object method value=exists {obj prop nt:optional} {
         set isDictSet [$obj eval [list info exists :$prop]]
         if {![info exists nt]} {
           return $isDictSet
@@ -1908,11 +1909,7 @@ apply {{version prj code {test ""}} {
   
   nx::Class create State {
     :property -accessor public name
-    :property -accessor public transitions:object,type=Transition,0..* {
-      :public object method value=isSet {obj prop} {
-        ::nsf::var::exists $obj $prop
-      }
-    }
+    :property -accessor public transitions:object,type=Transition,0..*
   }
 
   nx::Class create Event {
@@ -2283,9 +2280,8 @@ leaf: Num         <- Sign? Digit+                      			       ;
             return [dict values $nodes]
           }
         }
-        :public object method value=isSet {obj prop name} {
-          set nodes [next [list $obj $prop]]
-          dict exists $nodes $name
+        :public object method value=exists {obj prop name} {
+          dict exists [obj eval [list set :$prop]] $name
         }
 
         :public object method value=set {obj prop name value} {
@@ -2300,7 +2296,7 @@ leaf: Num         <- Sign? Digit+                      			       ;
       }
 
       :public method mkNode {classifier -name args} {
-        if {[:nodes isSet $name]} {
+        if {[:nodes exists $name]} {
           :nodes get $name
         } else {
           :nodes set $name [set r [$classifier new -childof [self] -name $name {*}$args]]
@@ -2584,12 +2580,7 @@ leaf: Num         <- Sign? Digit+                      			       ;
       Classifier create State {
         :property -accessor public name
         :property -accessor public actions:0..*,object,type=Command
-        
-        :property -accessor public transitions:object,type=Transition,0..* {
-          :public object method value=isSet {obj prop} {
-            ::nsf::var::exists $obj $prop
-          }
-        }
+        :property -accessor public transitions:object,type=Transition,0..*
       }
         
       Classifier create Transition {
