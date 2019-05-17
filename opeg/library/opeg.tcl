@@ -2280,8 +2280,12 @@ leaf: Num         <- Sign? Digit+                      			       ;
             return [dict values $nodes]
           }
         }
-        :public object method value=exists {obj prop name} {
-          dict exists [obj eval [list set :$prop]] $name
+        :public object method value=exists {obj prop name:optional} {
+          if {[info exists name]} {
+            dict exists [obj eval [list set :$prop]] $name
+          } else {
+            next
+          }
         }
 
         :public object method value=set {obj prop name value} {
