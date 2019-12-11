@@ -1,0 +1,139 @@
+import 'compositions.profile.uml'
+import 'http://www.eclipse.org/uml2/5.0.0/UML'
+import 'assets.profile.uml'
+
+-- 1) FLM-specific conditions
+-- 2) UML-specific conditions
+-- 3) Profile-specific conditions (consistency)
+
+package assets
+
+-- PROFILE derivation rules and consistency constraints 
+
+context asset::items : collaboration
+derive: self.base_Package.ownedElement->select(oclIsKindOf(UML::Class)).oclAsType(UML::Class).extension_collaboration
+
+-- context role::providers : Set(role)
+-- context role::consumers : Set(role)
+
+context collaboration::owned : role
+derive: self.base_Class.nestedClassifier->select(oclIsKindOf(UML::Class)).oclAsType(UML::Class).extension_role
+
+context languageModel::owned : classifier
+derive: self.base_Class.nestedClassifier->select(oclIsKindOf(UML::Class) and 
+        getAppliedStereotypes()->includes(assets::classifier)).oclAsType(UML::Class).
+        extension_role.oclAsType(assets::classifier)
+
+-- An asset package can only, at the level of direct children, contain collaboration classes. 
+-- Minimum content is one collaboration. A nested class can only take either stereotype.
+--// flma_1 //--
+context assets::asset
+def: allAssets() : 
+    Set(UML::Class) = self.base_Package.ownedElement
+        ->select(oclIsKindOf(UML::Class) and 
+        (getAppliedStereotypes().qualifiedName->includes('assets::collaboration') or 
+        getAppliedStereotypes().qualifiedName->includes('assets::languageModel')))
+        .oclAsType(UML::Class)->asSet()
+inv FLMA_1a: 
+    self.allAssets()->notEmpty()
+inv FLMA_1b: 
+    self.allAssets()->notEmpty() implies 
+        not (self.allAssets()->forAll(
+          getAppliedStereotypes().qualifiedName
+            ->includesAll(Set{'assets::collaboration',
+                              'assets::languageModel'
+                              })))
+--// end //--
+
+-- let allAssets = self.extension_asset.base_Package.ownedElement->select(oclIsKindOf(UML::Class)).oclAsType(UML::Class)->asSet() in allAssets.getAppliedStereotypes().qualifiedName->includes('assets::collaboration')
+
+
+-- For the scope of an asset package, there should be no relationships defined between the collaboration classes.
+--// flma_2 //--
+context asset
+inv FLMA_2: 
+  let relations : Set(UML::Relationship) = 
+      self.base_Package.ownedElement->select(oclIsKindOf(UML::Relationship))
+          .oclAsType(UML::Relationship)->asSet() in 
+      relations.relatedElement->excludesAll(allAssets()) 
+--// end //--
+
+-- The relationship between the nested (role) classes of a collaboration are confined to elements owned by this collaboration; and the asset package itself. 
+--// flma_3 //--
+context asset
+inv FLMA_3: 
+    let related : UML::Element = self.allAssets()
+      ->nestedClassifier.relationship.relatedElement->asSet() in 
+    related->forAll(re : UML::Element | re.owner = c or re = self) 
+--// end //--
+-- base_Package.ownedElement->forAll(e : UML::Element | 
+--   e.oclIsKindOf(UML::Class) implies
+--  e.oclAsType(UML::Class).nestedClassifier.relationship.relatedElement->forAll(re | re.owner = e or re = self))
+
+
+-- Collaboration classes must contain at least one nested class. In addition, there must at least be one role class. 
+--// flma_4 //--
+context collaboration
+inv FLMA_4a: 
+  self.base_Class.nestedClassifier->size() > 0
+inv FLMA_4b: 
+  self.base_Class.nestedClassifier->notEmpty() implies
+  self.base_Class.nestedClassifier->forAll(oclIsKindOf(UML::Class))
+inv FLMA_4c: 
+  self.base_Class.nestedClassifier->notEmpty() implies
+  self.base_Class.nestedClassifier->forAll(
+    getAppliedStereotypes().qualifiedName->includes('assets::role') 
+      or 
+    getAppliedStereotypes().qualifiedName->includes('assets::classifier'))
+inv FLMA_4d: 
+  self.base_Class.nestedClassifier->notEmpty() implies 
+  self.base_Class.nestedClassifier->one(
+     getAppliedStereotypes().qualifiedName->includes('assets::role'))
+--// end //--
+
+-- A language model as a specialised collaboration must contain only classifier classes.
+--// flma_5 //--
+context languageModel
+inv FLMA_5: 
+    self.base_Class.nestedClassifier->notEmpty() implies
+    self.base_Class.nestedClassifier->forAll(
+      oclIsKindOf(UML::Class) 
+        and 
+      getAppliedStereotypes().qualifiedName->includes('assets::classifier'))
+--// end //--
+
+-- Each role in a collaboration must correspond to a same-named classifier class provided by a language model, or by a another collaboration class in the case of derivatives. 
+--// flma_6 //--
+context role
+inv FLMA_6: 
+    collaboration.allInstances().base_Class.nestedClassifier->select(
+      getAppliedStereotypes().qualifiedName->includes('assets::classifier'))
+    ->any(name = self.base_Class.name) 
+--// end //--
+
+--// flma_7 //--
+context collaboration
+inv FLMA_7:  
+  self.base_Class.nestedClassifier->notEmpty() implies not
+  self.base_Class.nestedClassifier->forAll(
+    getAppliedStereotypes().qualifiedName->includes('assets;;role') 
+      and 
+     getAppliedStereotypes().qualifiedName->includes('assets::classifier'))
+
+context role
+inv FLMA_8a:  self.base_Class.isAbstract
+context assets::classifier
+inv FLMA_8b:  not self.base_Class.isAbstract
+
+context classifier
+inv FLMA_9:  
+    collaboration.allInstances().base_Class.nestedClassifier->select(
+      getAppliedStereotypes().qualifiedName->includes('assets::classifier'))
+    ->forAll(name <> self.base_Class.name)
+--// end //--
+
+-- A nested class cannot take model a classifier and a role at the same time.
+-- A role class must be set abstract. A classifier class must be set concrete.
+-- A given classifier class must be unique in the collection of assets.
+
+endpackage

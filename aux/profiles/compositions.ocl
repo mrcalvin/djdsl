@@ -1,0 +1,135 @@
+import 'compositions.profile.uml'
+import 'http://www.eclipse.org/uml2/5.0.0/UML'
+import 'assets.profile.uml'
+
+package compositions
+
+-- PROFILE derivation rules and consistency constraints 
+
+context refines::container : composition
+derive: self.base_Dependency.owner.oclAsType(UML::Package).extension_composition
+
+context refines::supplier : assets::collaboration
+derive: self.base_Dependency.target.oclAsType(UML::Class).extension_collaboration
+
+context refines::client : assets::collaboration
+derive: self.base_Dependency.source.oclAsType(UML::Class).extension_collaboration
+
+context composition::refinements: Set(refines)
+derive: self.base_Package.ownedElement->select(oclIsKindOf(UML::Dependency)).oclAsType(UML::Dependency).extension_refines
+
+-- The composition's slot refinement must point exactly to the refinement dependencies contained by the composition package.
+--// flmc_8 //--
+context composition
+inv FLMC_8a: 
+    self.base_Package.ownedElement->size() = self.refinements->size()
+inv FLMC_8b: 
+    self.base_Package.ownedElement->forAll(
+      self.refinements->includes(
+        oclAsType(UML::Dependency).extension_refines))
+--// end //--
+
+-- Context conditions
+
+context composition
+inv FLMC_0: self.base_Package.ownedElement->forAll(e | e.oclIsKindOf(UML::Class) or e.oclIsKindOf(UML::Dependency))
+
+-- A composition package must bind at least one asset package.
+-- self.ownedElement->select(oclIsKindOf(Dependency) and getAppliedStereotype('compositions::bind') <> null)
+--// flmc_1 //--
+context composition
+def: binds() : Set(UML::Package) =  self.base_Package.ownedElement->select(
+     oclIsKindOf(UML::Dependency) and 
+     not (getAppliedStereotype('compositions::bind').oclIsUndefined()))
+     ->oclAsType(UML::Dependency).supplier->oclAsType(UML::Package)->asSet()
+inv FLMC_1a: self.binds()->notEmpty()
+inv FLMC_1b: self.binds()->notEmpty() implies self.binds()->forAll(
+    getAppliedStereotypes().qualifiedName->includes('assets::asset')
+)
+--// end //--
+
+-- A composition package must contain refinement and binding dependencies only. Only one of these two stereotypes can be applied, at a time.
+--// flmc_2 //--
+context composition
+def: deps() : Set(UML::Dependency) = 
+     self.base_Package.ownedElement->select(
+       e : UML::Element | e.oclIsKindOf(UML::Dependency)
+     )->oclAsType(UML::Dependency)->asSet()
+inv FLMC_2a: 
+    self.deps()->notEmpty() implies 
+     self.deps()->forAll(
+       getAppliedStereotypes().qualifiedName->includes('compositions::refines') 
+          or 
+       getAppliedStereotypes().qualifiedName->includes('compositions::bind'))
+inv FLMC_2b: 
+    self.deps()->notEmpty() implies 
+    self.deps()->forAll(getAppliedStereotypes()->size() = 1)
+--// end //--
+
+-- There must be exactly one supplier and one client to a refinement dependency. Suppliers and clients to a refinement dependency must be bound classes only.
+--// flmc_3 //--
+context refines
+inv FLMC_3a: 
+    self.base_Dependency.supplier->size() = 1 and 
+    self.base_Dependency.client->size() = 1
+inv FLMC_3b: 
+    self.base_Dependency.supplier->any(
+        e : UML::Element | e.oclIsKindOf(UML::Class) and 
+        e.getAppliedStereotypes().qualifiedName->includes('compositions::bound')
+    )
+inv FLMC_3c: 
+    self.base_Dependency.client->any(
+        e : UML::Element | e.oclIsKindOf(UML::Class) and 
+        e.getAppliedStereotypes().qualifiedName->includes('compositions::bound')
+    )
+--// end //--
+
+-- Refinement dependencies must not form cycles.
+--// flmc_4 //--
+context refines
+inv FLMC_4: 
+    not self.base_Dependency.supplier->closure(clientDependency.supplier)
+    ->includes(self.base_Dependency)
+--// end //--
+
+-- A bound class must correspond to a collaboration class in one of the asset bindings.  
+--// flmc_5 //--
+context bound
+inv FLMC_5: 
+    base_Class.owner.oclAsType(UML::Package).extension_composition.binds()->any(
+      ownedElement->select(
+         oclIsKindOf(UML::Class) and name = self.base_Class.name
+      )->notEmpty())
+
+context refines
+inv FLMC_6a:
+    self.base_Dependency.relatedElement->forAll(
+      oclIsKindOf(UML::Class) and 
+      not (getAppliedStereotype('compositions::bound').oclIsUndefined()))
+
+context refines
+inv FLMC_6b: 
+    self.base_Dependency.client.oclAsType(UML::Class).owner = self.container.base_Package
+
+context refines
+inv FLMC_6c: 
+    self.base_Dependency.client.owner = self.container.base_Package
+
+context bind 
+inv FLMC_7a: 
+      self.base_Dependency.client->forAll(
+          oclIsKindOf(UML::Package) and
+          not getAppliedStereotype('compositions::composition').oclIsUndefined())
+inv FLMC_7b: 
+      self.base_Dependency.supplier->forAll(
+        oclIsKindOf(UML::Package) and
+          not getAppliedStereotype('assets::asset').oclIsUndefined()) 
+--// end //--
+
+-- A refinement must only relate two bound classes owned by the composition package owning the refinement dependency.
+-- A bind dependency must only relate composition and asset packages.   
+-- flmc_7 //--
+
+
+
+endpackage
