@@ -1,0 +1,94 @@
+import flmModel : 'md/flm.uml'
+
+package djdsl
+
+-- Simple directed dependency network for refinements
+--// flm_1 //--
+context Refinement
+-- no loops
+inv FLM_1a:  Composition.allInstances()->forAll(c | 
+                c.refinements->forAll(client <> supplier))
+-- no duplicates
+inv FLM_1b:  Composition.allInstances()->forAll(c | 
+                c.refinements->forAll(r1, r2 | 
+                    r1.client <> r2.client and 
+                    r1.supplier <> r2.supplier))
+-- no pairs of inverted
+inv FLM_1c:  Composition.allInstances()->forAll(c | 
+                 c.refinements->forAll(r1, r2 | 
+                    r1.client = r2.supplier implies 
+                    not (r1.supplier = r2.client)))
+--// end //--
+
+-- At least one composed collaboration must be a LanguageModel.
+--// flm_2 //--
+context Composition
+inv FLM_2: refinements->any(client.oclIsKindOf(LanguageModel))
+--// end //--
+
+
+-- A given collaboration cannot reference itself (also not transitively).
+--// flm_3 //--
+context Collaboration                                                  
+def: allIncluding(c : Composition) : Set(OclAny) = 
+     let clients = c.refinements->select(supplier = self).client in 
+     clients->closure(allIncluding(c))
+
+context Collaboration
+inv FLM_3:  Composition.allInstances()->forAll(c | 
+              self.allIncluding(c)->notEmpty() implies 
+              not self.allIncluding(c)->includes(self))
+--// end //--
+
+-- The number of collaborations included by the language model must match the number of selected features of the corresponding configuration.
+--// flm_4 //--
+context LanguageModel
+inv FLM_4: Composition.allInstances()->forAll(c |
+    	   	includes(c)->size() = c.derivedFrom.selected->size())
+--// end //--
+
+-- A given role cannot reference itself (also not transitively).
+--// flm_5 //--
+context Role 
+inv FLM_5:  consumers->notEmpty() implies
+            not self->closure(consumers)->includes(self)
+--// end //--
+	
+-- A role can only be dependent on (consume from, provide for) roles within the same collaboration.
+--// flm_6 //--
+context Role
+inv FLM_6:  consumers->union(providers)->
+            forAll(r : Role | r.owning = owning)
+--// end //--
+
+-- EOD
+
+-- There must be a maximum of one instantiation of a given language model.
+--// flm_x //--
+context LanguageModel
+inv FLM_x: LanguageModel.allInstances()->size() <= 1
+--// end //--
+
+-- A language model must no include itself as a refining collaboration.
+--// flm_y //--
+context LanguageModel
+def: includes(c : Composition) : Set(OclAny) = c.refinements->select(client = self)->collect(supplier)->asSet()
+
+context LanguageModel
+inv FLM_2: Composition.allInstances()->forAll(c | 
+           not self.includes(c)->includes(self))
+--// end //--
+
+-- The order of roles taken by a classifier must maintain the local-precedence orders (LPO) of the included collaborations.
+--// flm_z //--
+context Classifier
+def: takes(c : Composition) : Set(OclAny) = c.refinements->select(client = owning)->collect(supplier)->collect(owned)->select(name = self.name)->asSet()
+--// end //--
+
+-- context Classifier
+-- inv FLM_7:  Composition.allInstances()->forAll(c | self.owning.including(c)->notEmpty() implies 
+--            self.takes(c) = self.owning.includes.owned->select(takenBy = self))
+
+
+
+endpackage
