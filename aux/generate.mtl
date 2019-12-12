@@ -1,0 +1,110 @@
+[comment encoding = UTF-8]
+(C) 2018 Stefan Sobernig, WU Vienna <stefan.sobernig(at)wu.ac.at> 
+
+Created and tested with Acceleo 3.7.2, Eclipse Modeling Tools (Oxygen.3a)
+[/comment]
+
+[module generate('http://www.eclipse.org/uml2/5.0.0/UML')]
+
+[template public generateAsset(aModel : Model)]
+[comment @main/]
+[file (aModel.name + '-0.tcl', false, 'UTF-8')]
+
+package require djdsl::lm
+package provide [aModel.name/] 0
+namespace import ::djdsl::lm::*
+
+[asDjDslType(aModel)/] create [aModel.name/] {
+[for (class : Class | Class.allInstances()->select(
+                        hasStereotype('assets::languageModel') or 
+                        hasStereotype('assets::collaboration')))]
+  [class.generate()/]
+[/for]
+}
+package provide [aModel.name/] 0
+[/file]
+[/template]
+
+[template protected generate(class : Class)]
+  [asDjDslType(class)/] create [class.name/][class.generateBody()/]
+[/template]
+
+[template protected generateNested(class : Class)]
+[for (nclass : Class | class.nestedClassifier.oclAsType(Class))]
+  [nclass.generate()/]
+[/for]
+[/template]
+
+[template protected generateBody(class : Class)]
+[if (not class.ownedMember->isEmpty())] {
+  [class.generateProperties()/]
+  [class.generateNested()/]
+}
+[/if]
+    
+[/template]
+
+[template protected generateProperties(class : Class)]
+[for (p : Property | class.getAllAttributes()) separator('\n')]
+  :property [p.name/][for (Sequence{
+                              p.type.asNxType2(
+                                (if(not class.getAppliedStereotype('assets::languageModel').oclIsUndefined()) 
+                                  then class.name else '' endif)), 
+                              p.getMultiplicity()}->excluding('')) 
+                          before(':') separator (',') ][self/][/for]
+[/for]
+[/template]
+
+[query public asDjDslType(c : Element) : String = 
+  if      (hasStereotype(c, 'assets::classifier'))    then 'Classifier' 
+  else if (hasStereotype(c, 'assets::role'))          then 'Role' 
+  else if (hasStereotype(c, 'assets::asset'))         then 'Asset'
+  else if (hasStereotype(c, 'assets::collaboration')) then 'Collaboration'
+  else if (hasStereotype(c, 'assets::languageModel')) then 'LanguageModel'  
+  else                                                     'nx::Class' 
+  endif
+  endif
+  endif    
+  endif
+  endif/]
+
+[query public getMultiplicity(m:MultiplicityElement) : String = 
+  if (m.upper = -1 or m.upper > 1) then m.lower.toString() + '..*' else 
+  if (m.lower = 1 and m.upper = 1) then 'required' 
+  else ''
+  endif 
+  endif/]
+
+[query public asNxType(t : Type, prefix : String) : String =
+  if (not t.oclIsUndefined() and not t.name.oclIsUndefined()) then 
+      if      (t.name = 'Integer')    then 'integer' 
+              else                         'object,type=' + 
+                                      if (prefix <> '') then 
+                                            prefix + '::' + t.name else 
+                                            t.name endif
+      endif
+  else                                      ''
+  endif
+/]
+
+[query public asNxType2(t : Type, prefix : String) : String =
+  if (not t.oclIsUndefined()) then 
+     if (not t.name.oclIsUndefined()) then 
+        if      (t.name = 'Integer')    then 'integer' 
+              else                         'object,type=' + 
+                                      if (prefix <> '') then 
+                                            prefix + '::' + t.name else 
+                                            t.name endif
+      endif
+     else if (t.toString().contains('#Integer')) then 'integer' else 
+          if (t.toString().contains('#Boolean')) then 'boolean' else 
+          if (t.toString().contains('#Real'))    then 'double' 
+                                                 else '' 
+          endif endif endif endif
+  else '' endif
+/]
+
+[query public hasStereotype(stereotypedElement : Element, qualifiedName : String) : Boolean = 
+   let stereotype : Stereotype = stereotypedElement.getAppliedStereotype(qualifiedName) in
+      not stereotype.oclIsUndefined()  
+/]
