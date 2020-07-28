@@ -6,9 +6,8 @@ software languages. `djdsl` is provided as a bundle of Tcl modules
 
 https://github.com/mrcalvin/djdsl
 
-This is the supplementary Web site to the book *Variability design
-and implementation for domain-specific software languages*
-(forthcoming) by [Stefan Sobernig](http://nm.wu.ac.at/en/sobernig).
+This is the supplementary Web site to the book entitled [Variable Domain-specific Software Languages with DjDSL
+(Springer, 2020)](https://doi.org/10.1007/978-3-030-42152-6) by [Stefan Sobernig](https://nm.wu.ac.at/en/sobernig).
 
 The supplemental material includes the multi-DSL development system DjDSL.
 
