@@ -5,7 +5,7 @@ djdsl: build
 
 configure: 
 	@for i in $(DJDSL_PARTS); do \
-		(cd $$i && ./configure ${SPOTO_ARGS}); \
+		(cd $$i && ./configure ${SPOTO_ARGS} --moddir=${moddir}/djdsl); \
 	done
 
 djdsl-build:
