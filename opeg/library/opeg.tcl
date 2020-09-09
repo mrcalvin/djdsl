@@ -2282,7 +2282,7 @@ leaf: Num         <- Sign? Digit+                      			       ;
         }
         :public object method value=exists {obj prop name:optional} {
           if {[info exists name]} {
-            dict exists [obj eval [list set :$prop]] $name
+            dict exists [$obj eval [list set :$prop]] $name
           } else {
             next
           }

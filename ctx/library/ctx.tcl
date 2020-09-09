@@ -152,12 +152,8 @@ apply {{version prj code {test ""}} {
   AssetElement property \
       -accessor public \
       -incremental \
-      condition:0..*,object,type=[namespace current]::Condition {
-        :public object method value=isSet {obj prop} {
-          ::nsf::var::exists $obj $prop
-        }
-      }
-
+      condition:0..*,object,type=[namespace current]::Condition
+  
   AssetElement protected method compileScript {} {
     set f ""
 
@@ -443,10 +439,6 @@ apply {{version prj code {test ""}} {
     LanguageModel create Graph {
       :property name
       :property -incremental {edges:0..*,type=Graph::Edge,substdefault {[list]}} {
-        :public object method value=isSet {obj prop} {
-          ::nsf::var::exists $obj $prop
-        }
-
         :public object method value=size {obj prop} {
           llength [:$obj $prop get]
         }
@@ -488,11 +480,6 @@ apply {{version prj code {test ""}} {
       :property -accessor public {MAXEDGES:integer 10} 
     }
     #// end //
-
-    capped::slot::MAXEDGES public object method value=isSet {obj prop} {
-      ::nsf::var::exists $obj $prop
-    }
-
 
   }; # Graphs
   
@@ -588,7 +575,7 @@ apply {{version prj code {test ""}} {
   #// ctx5 //
   context Graphs::Graph {
     cond {
-      ![:edges isSet] ||
+      ![:edges exists] ||
       [:edges forAll e {
         [$e a get] in [:nodes get] &&
         [$e b get] in [:nodes get]
@@ -603,7 +590,7 @@ apply {{version prj code {test ""}} {
 
   #// ctx6a //
   context Graphs::capped {
-    cond {[:MAXEDGES isSet] &&
+    cond {[:MAXEDGES exists] &&
       [:edges size] < [:MAXEDGES get]}
   }
   #// end //
@@ -624,7 +611,7 @@ apply {{version prj code {test ""}} {
   #// ctx7 //
   context Graphs::capped {
     cond {
-      [:MAXEDGES isSet] &&
+      [:MAXEDGES exists] &&
       [:edges size] < [:MAXEDGES get] &&
       [next]}
   }
@@ -640,7 +627,7 @@ apply {{version prj code {test ""}} {
   #// ctx8 //
   context Graphs::capped {
     cond {
-      [:MAXEDGES isSet] &&
+      [:MAXEDGES exists] &&
       [:edges size] < [:MAXEDGES get] &&
       ![next]}
   }
@@ -655,7 +642,7 @@ apply {{version prj code {test ""}} {
  
   context Graphs::capped {
     # Is the variable set?
-    cond {[:MAXEDGES isSet]}
+    cond {[:MAXEDGES exists]}
     # Are there fewer than the maximally allowed number of edges?
     cond {[:edges size] < [:MAXEDGES get]}
     # Don't the ancestor conditions hold?

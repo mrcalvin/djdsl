@@ -563,7 +563,7 @@ namespace eval ::djdsl::ctx::test {
       -setup $SETUP2 \
       -body {
         context Graphs::Graph {
-          cond {[:edges isSet] && [:edges forall e {
+          cond {[:edges exists] && [:edges forall e {
             [$e a get] in [:nodes get] &&
             [$e b get] in [:nodes get]}]}
         }
@@ -575,7 +575,7 @@ namespace eval ::djdsl::ctx::test {
       -setup $SETUP2 \
       -body {
         context Graphs::Graph {
-          cond {[:edges isSet] && [:edges forall e {
+          cond {[:edges exists] && [:edges forall e {
             [$e a get] in [:nodes get] &&
             [$e b get] in [:nodes get]}]}
           cond {true}
@@ -589,7 +589,7 @@ namespace eval ::djdsl::ctx::test {
       -setup $SETUP2 \
       -body {
         context Graphs::Graph {;}
-        Graphs::Graph condition isSet
+        Graphs::Graph condition exists
       } -cleanup $CLEANUP -result "0";
 
 

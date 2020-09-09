@@ -336,14 +336,15 @@ apply {{version prj code {test ""}} {
     :property -accessor public -incremental \
         {properties:substdefault "[dict create]"} {
           :public object method value=set {obj prop value} {
-            if {[$obj $prop isSet]} {
+            if {[$obj $prop exists]} {
               set value [dict merge [$obj $prop get] $value]
             }
             next [list $obj $prop $value]
           }
           
-          :public object method value=isSet {obj prop p:optional} {
-            set isDictSet [$obj eval [list info exists :$prop]]
+          :public object method value=exists {obj prop p:optional} {
+            # set isDictSet [$obj eval [list info exists :$prop]]
+            set isDictSet [next]
             if {![info exists p]} {
               return $isDictSet
             } else {
@@ -676,8 +677,8 @@ play(
   }]
   
   ? {llength [$g edges get]} 2
-  ? {[lindex [$g edges get] 0] weight isSet} 0
-  ? {[lindex [$g edges get] 1] weight isSet} 0
+  ? {[lindex [$g edges get] 0] weight exists} 0
+  ? {[lindex [$g edges get] 1] weight exists} 0
   
   
   #
@@ -993,7 +994,7 @@ play(
   set transitions [[::smb2 sm get] info children -type [GuardedBehaviours]::StateMachine::Transition]
   
   ? {llength $transitions} 6
-  ? {llength [lmap t $transitions {if {![$t guard isSet]} continue}]} 2
+  ? {llength [lmap t $transitions {if {![$t guard exists]} continue}]} 2
   ? {llength [[::smb2 sm get] info children -type [Behaviours]::StateMachine::State]} 5
 
     #
@@ -1049,10 +1050,10 @@ play(
     
   ? {llength [$g edges get]} 3
   
-  ? {[lindex [$g edges get] 0] weight isSet} 0
-  ? {[lindex [$g edges get] 0] colour isSet} 0
+  ? {[lindex [$g edges get] 0] weight exists} 0
+  ? {[lindex [$g edges get] 0] colour exists} 0
   ? {[[lindex [$g edges get] 1] cget -colour] cget -value} "#00f"
-  ? {[lindex [$g edges get] 1] weight isSet} 0
+  ? {[lindex [$g edges get] 1] weight exists} 0
   ? {[[lindex [$g edges get] 2] cget -colour] cget -value} "#eee"
   ? {[[lindex [$g edges get] 2] cget -weight] cget -value} 5
 
@@ -1088,10 +1089,10 @@ play(
     
   ? {llength [$g edges get]} 3
   
-  ? {[lindex [$g edges get] 0] weight isSet} 0
-  ? {[lindex [$g edges get] 0] colour isSet} 0
+  ? {[lindex [$g edges get] 0] weight exists} 0
+  ? {[lindex [$g edges get] 0] colour exists} 0
   ? {[[lindex [$g edges get] 1] cget -colour] cget -value} "#00f"
-  ? {[lindex [$g edges get] 1] weight isSet} 0
+  ? {[lindex [$g edges get] 1] weight exists} 0
   ? {[[lindex [$g edges get] 2] cget -colour] cget -value} "#eee"
   ? {[[lindex [$g edges get] 2] cget -weight] cget -value} 5
 
@@ -1127,10 +1128,10 @@ play(
     
   ? {llength [$g edges get]} 3
   
-  ? {[lindex [$g edges get] 0] weight isSet} 0
-  ? {[lindex [$g edges get] 0] colour isSet} 0
+  ? {[lindex [$g edges get] 0] weight exists} 0
+  ? {[lindex [$g edges get] 0] colour exists} 0
   ? {[[lindex [$g edges get] 1] cget -colour] cget -value} "#00f"
-  ? {[lindex [$g edges get] 1] weight isSet} 0
+  ? {[lindex [$g edges get] 1] weight exists} 0
   ? {[[lindex [$g edges get] 2] cget -colour] cget -value} "#eee"
   ? {[[lindex [$g edges get] 2] cget -weight] cget -value} 5
   

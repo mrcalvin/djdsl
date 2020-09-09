@@ -92,11 +92,7 @@ apply {{version prj code {test ""}} {
         :property -accessor public {value:integer 0}
       }
       Role create Edge {
-        :property -accessor public weight:object,type=Weight {
-          :public object method value=isSet {obj prop} {
-            ::nsf::var::exists $obj $prop
-          }
-        }
+        :property -accessor public weight:object,type=Weight
       }
     }
   }
@@ -113,11 +109,7 @@ apply {{version prj code {test ""}} {
       }
       Role create Edge {
         :property -accessor public \
-            colour:object,type=Colour {
-              :public object method value=isSet {obj prop} {
-                ::nsf::var::exists $obj $prop
-              }
-            }
+            colour:object,type=Colour
       }
     }
   }; # Colours
@@ -254,11 +246,7 @@ apply {{version prj code {test ""}} {
       Role create Transition {
         namespace import ::djdsl::examples::Expressions;
         :property -accessor public \
-            guard:object,type=[Expressions]::Model::Expression {
-              :public object method value=isSet {obj prop} {
-                ::nsf::var::exists $obj $prop
-              }
-            }
+            guard:object,type=[Expressions]::Model::Expression
       }
     }
   }
