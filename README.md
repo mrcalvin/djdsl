@@ -46,7 +46,7 @@ A step by step series of examples that tell you how to get a development env run
 Run configure
 
 ```
-./configure --with-tcl=/path/to/tclConfig.sh --tclsh=/path/to/tclsh
+./configure --tclsh=/path/to/tclsh --with-tcl=no
 ```
 
 Run make
