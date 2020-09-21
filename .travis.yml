@@ -1,0 +1,153 @@
+language: c
+os: linux
+dist: focal
+
+#
+# Make sure that the 'latest' tag is always exempted from triggering a
+# built. Auto-tagging (`git tag -f`) at the 'deploy' stage would
+# otherwise trigger endless build cycles. Also: Adding manual (release)
+# tags requires no change here!
+#
+branches:
+  except:
+    - latest
+
+env:
+  global:
+  - ERROR_ON_FAILURES=1
+  - SHELL=""
+
+#
+# This controls also the way file paths are treated when managing
+# workspaces. If not set, OS dependent absolute paths end up archived
+# in the workspaces. See
+# https://travis-ci.community/t/workspaces-do-not-work-nicely-with-cross-platform-builds/4461
+#
+cache:
+  branch: paths-relative
+  
+jobs:
+  include:
+  - stage: Building and testing
+    name: linux
+    os: linux
+    dist: focal
+    compiler: gcc
+    workspaces:
+      create:
+        name: linux-binaries
+        paths:
+            - ${ARTIFACT}
+  - name: macOS
+    os: osx
+    osx_image: xcode11.7
+    workspaces:
+      create:
+        name: macos-binaries
+        paths:
+            - ${ARTIFACT}
+  - name: "win"
+    os: windows
+    compiler: gcc
+    # Important: Always use ${SHELL}, ${mingw64}, or ${msys2}; see https://docs.travis-ci.com/user/reference/windows/#how-do-i-use-msys2
+    before_install:
+    - |-
+        [[ ! -f C:/tools/msys64/msys2_shell.cmd ]] && rm -rf C:/tools/msys64
+        choco uninstall -y mingw
+        choco upgrade --no-progress -y msys2
+        export msys2='cmd //C RefreshEnv.cmd '
+        export msys2+='& set MSYS=winsymlinks:nativestrict '
+        export msys2+='& C:\\tools\\msys64\\msys2_shell.cmd -defterm -no-start'
+        export mingw64="$msys2 -mingw64 -full-path -here -c "\"\$@"\" --"
+        export msys2+=" -msys2 -c "\"\$@"\" --"
+        $msys2 pacman --sync --noconfirm --needed base-devel mingw-w64-x86_64-toolchain
+        taskkill //IM gpg-agent.exe //F
+        export PATH=/c/tools/msys64/mingw64/bin:$PATH
+        export SHELL=${mingw64}
+    before_cache:
+    - $msys2 pacman --sync --clean --noconfirm
+    cache:
+      directories:
+        - $HOME/AppData/Local/Temp/chocolatey
+        - /C/tools/msys64
+    workspaces:
+      create:
+        name: win-binaries
+        paths:
+          - ${ARTIFACT}
+  - stage: Deploying
+    language: shell
+    workspaces:
+      use:
+        - linux-binaries
+        - macos-binaries
+        - win-binaries
+    git:
+      clone: true
+    install: ignore
+    script:
+      # This is a temporary workaround: Relative-path handling (see
+      # cache.branch above) does not work on Windows builders.
+      - cp ./C:/Users/travis/build/mrcalvin/djdsl/* .
+      # Auto-tagging is key to realise 'latest' (or, 'nightly')
+      # builds: If TRAVIS_TAG is not set, auto-tag and set the env
+      # variable explicitly. If already set (assuming a manually set release
+      # tag) proceed (this is a to-do, only latest builds enabled for
+      # now).
+      # 
+      # See for some background (also I deviated from them:)
+      # - https://travis-ci.community/t/how-to-update-a-github-release/9064/2
+      # - https://stackoverflow.com/questions/51349200/create-nightly-releases-with-multiple-artifacts-on-github-via-travis
+      - if [ -z "$TRAVIS_TAG" ] ; then
+          git tag -f latest;
+          git push --tags -f https://mrcalvin:${TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git;
+          export TRAVIS_TAG="latest";
+        fi
+    # To-do: For a manual (release) tagging, we should allow for a
+    # variant here: draft: true, prerelease: false, overwrite: false;
+    # (and likely switch to edge-version of GitHub releases provider,
+    # allowing for 'release_notes_file: ${TRAVIS_TAG}.md' or similar
+    deploy:
+      provider: releases
+      token: $TOKEN
+      file_glob: true
+      file: djdslkit-*
+      skip_cleanup: true
+      draft: false
+      prerelease: true
+      overwrite: true
+      tag_name: ${TRAVIS_TAG}
+      name: Latest DjDSL development build (${TRAVIS_BRANCH})
+      release_notes: Automated DjDSL development build.
+      on:
+        repo: mrcalvin/djdsl
+        tags: true
+
+install:
+  #
+  # To-do: Once tclbdd is in KC mainland, change the tarball URL here.
+  #
+  - wget -O kitcreator-tmp.tar.gz https://kitcreator.rkeene.org/fossil/tarball/kitcreator-tmp.tar.gz?uuid=mr_calvin-tclbdd
+  - tar -xzf kitcreator-tmp.tar.gz
+  - cd kitcreator-tmp
+  - ${SHELL} ./build/pre.sh || exit 1
+
+script:
+  - cd $TRAVIS_BUILD_DIR
+  - ${SHELL} ./configure --with-tcl=no --moddir=$TRAVIS_BUILD_DIR/kitcreator-tmp/djdsl/out.tmp/lib/tcl8/8.6
+  - ${SHELL} make install
+  - echo 'cp -rp out.tmp out' > $TRAVIS_BUILD_DIR/kitcreator-tmp/djdsl/build.sh
+  - chmod u+x $TRAVIS_BUILD_DIR/kitcreator-tmp/djdsl/build.sh
+  - export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
+  - cd kitcreator-tmp
+  - ${SHELL} ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
+  - cd $TRAVIS_BUILD_DIR
+  - ${SHELL} make TCLSH="$TRAVIS_BUILD_DIR/kitcreator-tmp/tclkit-8.6.10" test
+  - if [ -z "$TRAVIS_TAG" ] ; then
+        export TRAVIS_TAG="latest";
+     fi
+  - export ARTIFACT="djdslkit-${TRAVIS_TAG}-${TRAVIS_OS_NAME}"
+  - if [ $TRAVIS_OS_NAME = windows ]; then
+       ARTIFACT="${ARTIFACT}.exe";
+     fi  
+  - cp -p "$TRAVIS_BUILD_DIR/kitcreator-tmp/tclkit-8.6.10" ${ARTIFACT}

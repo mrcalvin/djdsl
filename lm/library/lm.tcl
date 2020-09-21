@@ -161,7 +161,6 @@ apply {{version prj code {test ""}} {
           }]
     }
   }
-
    
   nx::Class create Composition -superclasses Asset {
     :property binds:object,type=Asset,1..*

@@ -14,15 +14,15 @@ djdsl-build:
 build: configure all
 	deps='' && \
 	for i in $(DJDSL_PARTS); do \
-            (cd $$i && make); \
-	    dep=$$(cd $$i && make require); \
+            $(MAKE) -C $$i ; \
+	    dep=$$($(MAKE) -C $$i --no-print-directory require); \
 	    deps="$$deps $$dep"; \
 	done \
         && echo $$deps >> ${SCLIB}
 
 djdsl-clean: clean-spot
 	@for i in $(DJDSL_PARTS); do \
-	    (cd $$i && make clean); \
+	    $(MAKE) -C $$i clean; \
 	done
 	if test X"${SCLIB}" != X"" && test -f "${SCLIB}" ; then \
 	    rm -f "${SCLIB}" ; \
@@ -31,17 +31,17 @@ djdsl-clean: clean-spot
 
 djdsl-distclean: distclean-spot
 	@for i in $(DJDSL_PARTS); do \
-	    (cd $$i && make distclean); \
+	    $(MAKE) -C $$i distclean; \
 	done
 
 djdsl-test: build
 	@for i in $(DJDSL_TESTABLES); do \
-	    (cd $$i && make test); \
+	    $(MAKE) -C $$i test; \
 	done
 
 install: build install-script-lib
 	@for i in $(DJDSL_PARTS); do \
-	    (cd $$i && make install DESTDIR="$(DESTDIR)"); \
+	    $(MAKE) -C $$i install DESTDIR="$(DESTDIR)"; \
 	done
 
 djdsl-shell: build

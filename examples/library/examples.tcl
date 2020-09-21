@@ -286,6 +286,25 @@ apply {{version prj code {test ""}} {
 
   namespace export {*}[namespace export] Ansible
 
+  #// ql //
+Asset create Survey {
+  
+  LanguageModel create Questionnaire {
+    :property items:object,type=Survey::Question
+    
+    Classifier create Question 
+    Classifier create TextBox
+  }
+  
+  Collaboration create rendering {
+    
+    Classifier create Widget 
+    Role create Question
+  }
+}
+  #// end //
+
+  namespace export {*}[namespace export] Survey
   
 } {
   #

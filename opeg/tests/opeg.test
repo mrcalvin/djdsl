@@ -1030,6 +1030,35 @@ void: WS   <- <space>;
     
   } -cleanup $CLEANUP -result [list 1 1 1 1]
 
+  test opeg-4.6 "Collections" -setup $SETUP -body {
+    
+    set (helper) [nx::Class create HyperPoint {
+      :property x:integer,1..*
+      :property y:integer
+    }]
+    
+    set (g) [Grammar newFromScript "
+      OPEG Coordinate (P)
+      	P  <- `HyperPoint` '(' x:<digit> (x:<alnum>)* ')';
+      END;
+    "]
+    
+    set (p) [$(g) new]
+  
+    set (out) [$(p) parse "(4)"]
+    
+    lappend () [expr {[$(out) info class] eq $(helper)}]
+    lappend () [expr {[$(out) cget -x] eq "4"}];
+
+    set (out2) [$(p) parse "(42)"]
+    
+    lappend () [expr {[$(out2) info class] eq $(helper)}]
+    puts =====[$(out2) cget -x]
+    lappend () [expr {[$(out2) cget -x] eq "4 2"}];
+    
+  } -cleanup $CLEANUP -result [list 1 1 1 1]
+
+
   test opeg-5.1 "Choice propagation" -setup $SETUP -body {
 
     set (helper) [nx::Class create Base {
