@@ -60,7 +60,7 @@ by working through the various doctest examples or tutorials, e.g.:
 or
 
 ```
-% package require v1e
+% package require djdsl::v1e
 ```
 
 then follow the [djdsl::v1e how-to](doc/v1e.adoc).

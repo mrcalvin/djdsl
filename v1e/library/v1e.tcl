@@ -845,7 +845,7 @@ apply {{version prj code {test ""}} {
   # == Doctests
   #
 
-  package req v1e
+  package require djdsl::v1e
   
   #
   # A small excerpt from the GPL feature model, defined using the v1e
