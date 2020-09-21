@@ -286,7 +286,6 @@ nx::Class create LanguageModel -superclasses Collaboration {
         }]
   }
 }
-
  
 nx::Class create Composition -superclasses Asset {
   :property binds:object,type=Asset,1..*

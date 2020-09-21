@@ -12,11 +12,7 @@ nx::Class create StateMachine {
 
 nx::Class create State {
   :property -accessor public name
-  :property -accessor public transitions:object,type=Transition,0..* {
-    :public object method value=isSet {obj prop} {
-      ::nsf::var::exists $obj $prop
-    }
-  }
+  :property -accessor public transitions:object,type=Transition,0..*
 }
 
 nx::Class create Event {
@@ -527,9 +523,12 @@ Asset create Graphs {
           return [dict values $nodes]
         }
       }
-      :public object method value=isSet {obj prop name} {
-        set nodes [next [list $obj $prop]]
-        dict exists $nodes $name
+      :public object method value=exists {obj prop name:optional} {
+        if {[info exists name]} {
+          dict exists [$obj eval [list set :$prop]] $name
+        } else {
+          next
+        }
       }
 
       :public object method value=set {obj prop name value} {
@@ -544,7 +543,7 @@ Asset create Graphs {
     }
 
     :public method mkNode {classifier -name args} {
-      if {[:nodes isSet $name]} {
+      if {[:nodes exists $name]} {
         :nodes get $name
       } else {
         :nodes set $name [set r [$classifier new -childof [self] -name $name {*}$args]]
@@ -849,12 +848,7 @@ Asset create Behaviours {
     Classifier create State {
       :property -accessor public name
       :property -accessor public actions:0..*,object,type=Command
-      
-      :property -accessor public transitions:object,type=Transition,0..* {
-        :public object method value=isSet {obj prop} {
-          ::nsf::var::exists $obj $prop
-        }
-      }
+      :property -accessor public transitions:object,type=Transition,0..*
     }
       
     Classifier create Transition {
@@ -1400,9 +1394,7 @@ set dotParser [$dotPeg new -factory [set mf [ModelFactory new {
 }]]]
 
 % $dotParser parse $str
-
-  nodes {{1st Edition} {2nd Edition} {3rd Edition}}
-  edges {{{1st Edition} {2nd Edition}} {{2nd Edition} {3rd Edition}}}
+nodes {{1st Edition} {2nd Edition} {3rd Edition}} edges {{{1st Edition} {2nd Edition}} {{2nd Edition} {3rd Edition}}}
 --------------------------------------------------
 
 === Anticipated extension
@@ -1512,6 +1504,7 @@ $coordParser print {(11,22)}
 [source,tcl]
 --------------------------------------------------
 puts stderr [$coordParser parset {(11,22)}]
+package req nx 2.3
 --------------------------------------------------
 
 == Implementation
@@ -1523,6 +1516,121 @@ has stabilized; and we support bootstrapping.
 
 [source,tcl]
 --------------------------------------------------
+package require pt::rde::nx
+package req pt::peg::op
+--------------------------------------------------
+
+set fh [open [file join [file dirname [info script]] "opeg.peg"] r]
+set g [read $fh]
+catch {close $fh}
+
+[source,tcl]
+--------------------------------------------------
+
+--------------------------------------------------
+
+leaf: Ident         <- ('_' / <alpha>) ('_' / <alnum>)* ;
+
+[source,tcl]
+--------------------------------------------------
+leaf: Ident         <- '::' <alnum>+ ('::' / <alnum>+)* / ('_' / <alpha>) ('_' / <alnum>)* ;
+Identifier          <- Ident WHITESPACE ;
+Field    	    <- Ident WHITESPACE COLON WHITESPACE Suffix ;
+void: IS            <- '<' '-' WHITESPACE ;
+leaf: LEAF          <- 'l' 'e' 'a' 'f' WHITESPACE ;
+Literal             <- APOSTROPH (!APOSTROPH Char)* APOSTROPH WHITESPACE / DAPOSTROPH (!DAPOSTROPH Char)* DAPOSTROPH WHITESPACE ;
+leaf: LOWER         <- '<' 'l' 'o' 'w' 'e' 'r' '>' WHITESPACE ;
+leaf: NOT           <- '!' WHITESPACE ;
+void: OPEN          <- '(' WHITESPACE ;
+                         void: OPENB         <- '\[' ;
+void: OPENCB        <- '`' ;
+void: PEG           <- 'O' 'P' 'E' 'G' !('_' / ':' / <alnum>) WHITESPACE ;
+leaf: PLUS          <- '+' WHITESPACE ;
+      Prefix        <-  (AND / NOT)? Suffix ;
+                         Primary       <- ALNUM / ALPHA / ASCII / CONTROL / DDIGIT / DIGIT / GRAPH / LOWER / PRINTABLE / PUNCT / SPACE / UPPER / WORDCHAR / XDIGIT / Identifier / OPEN Expression CLOSE / Literal / Class / DOT ;
+leaf: PRINTABLE     <- '<' 'p' 'r' 'i' 'n' 't' '>' WHITESPACE ;
+leaf: PUNCT         <- '<' 'p' 'u' 'n' 'c' 't' '>' WHITESPACE ;
+leaf: QUESTION      <- '?' WHITESPACE ;
+      Range         <- Char TO Char / Char ;
+void: SEMICOLON     <- ';' WHITESPACE ;
+      Sequence      <- Ctor? (Field / Prefix)+ ;
+void: SLASH         <- '/' WHITESPACE ;
+leaf: SPACE         <- '<' 's' 'p' 'a' 'c' 'e' '>' WHITESPACE ;
+leaf: STAR          <- '*' WHITESPACE ;
+      StartExpr     <- OPEN Expression CLOSE ;
+      Suffix        <- Primary (QUESTION / STAR / PLUS)? ;
+void: TO            <- '-' ;
+leaf: UPPER         <- '<' 'u' 'p' 'p' 'e' 'r' '>' WHITESPACE ;
+leaf: VOID          <- 'v' 'o' 'i' 'd' WHITESPACE ;
+void: WHITESPACE    <- (<space> / COMMENT)* ;
+leaf: WORDCHAR      <- '<' 'w' 'o' 'r' 'd' 'c' 'h' 'a' 'r' '>' WHITESPACE ;
+leaf: Word          <- '$'? <wordchar>+ / '{' Command '}'; 
+leaf: XDIGIT        <- '<' 'x' 'd' 'i' 'g' 'i' 't' '>' WHITESPACE ;
+END;}
+
+namespace eval ::pt::rde {
+  
+  #
+  # PARAM/NX runtime: pt::rde::nx
+  #
+  
+  nx eval {
+    
+    :public method parset {script} {
+      :reset {}
+      :data $script
+      :MAIN ; # Entrypoint for the generated code.
+      :complete
+    }
+    
+    :public object method pgen {frontendPeg} {
+      
+      # We might also use opeg::Rewriter here, as the OO wrapper, but
+      # this would render pgen dependent on the opeg package.
+      set ser [pt::peg::from::peg convert $frontendPeg]
+      
+      ## initialize to NX/PEG backend defaults or dummies
+      pt::tclparam::configuration::nx def _ _ _  {pt::peg::to::tclparam configure}
+      
+      ## strip down to just the core script fragment
+      pt::peg::to::tclparam configure -template {@code@}
+      # puts stderr ser=$ser
+      set body [pt::peg::to::tclparam convert $ser]
+      # puts BODY=$body
+      set cls [nx::Class new -superclasses [self] -- $body]
+      return $cls
+    }
+    
+    #
+    # An auxiliary tree printer facility, for all NX-based parsers.
+    #
+    
+    :public method print {input} {
+      set ast [:parset $input]
+      :printNode {*}$ast
+    }
+    
+    :method printNode {{-indent ""} -last:switch symbol start end args} {
+      set nrChildren [llength $args]
+      set parent [expr {$nrChildren ? "+" : "-"}]
+      set pipe [expr {$indent ne "" ? "|" : ""}]
+      set lastChild  [expr {$last ? "\\" : $pipe}]
+      set output [string cat $indent $lastChild "-" $parent "="]
+      append indent [expr {$last ? "  " : "$pipe "}]
+      
+      puts "$output $symbol :: $start $end"
+      
+      for {set i 0} {$i < $nrChildren} {incr i} {
+        set pargs [list -indent $indent]
+        if {$i == $nrChildren-1} {
+          lappend pargs -last
+        }
+        :printNode {*}$pargs {*}[lindex $args $i]
+      }
+    } 
+  }
+}
+
 package require pt::pgen
 try [pt::pgen peg $g nx -class Parser -name "OPEG Grammar"] on return {} {;}
 --------------------------------------------------
@@ -1687,7 +1795,7 @@ nx::Class create Grammar -superclasses Rewriter {
     }
 
     :public method exists {nt} {
-      ${:grammar} rules isSet $nt
+      ${:grammar} rules exists $nt
     }
 
     :public method remove {args} {
@@ -1845,14 +1953,14 @@ nx::Class create Grammar -superclasses Rewriter {
   :property -accessor public -incremental rules {
     :public object method value=set {obj prop value} {        
 
-      if {[$obj $prop isSet]} {
+      if {[$obj $prop exists]} {
         set value [dict merge [$obj $prop get] $value]
       }
       
       next [list $obj $prop $value]
     }
     
-    :public object method value=isSet {obj prop nt:optional} {
+    :public object method value=exists {obj prop nt:optional} {
       set isDictSet [$obj eval [list info exists :$prop]]
       if {![info exists nt]} {
         return $isDictSet
@@ -2212,7 +2320,7 @@ nx::Class create Grammar -superclasses Rewriter {
     }
     puts "<<<<<<<"
     set peg [list pt::grammar::peg [list rules $rules start [list n [string map {:: //} ${:start}]]]]
-    puts PEG=$peg
+    
     pt::peg verify-as-canonical $peg
     puts SPEC=${:specs}
     return $peg
@@ -2630,7 +2738,7 @@ nx::Class create BuilderGenerator -superclasses Rewriter {
       # 2) Downshape OPEG "AST" into serial PEG
       set ser [:rewrite $opegAst $opegScript]
       # 3) Generate PEG+ parser bundle
-      puts SER=$ser
+      puts ser=$ser
       ## initialize to NX/PEG backend defaults or dummies
       pt::tclparam::configuration::nx def _ _ _   {pt::peg::to::tclparam configure}
       
@@ -3006,8 +3114,9 @@ nx::Class create Engine -superclasses pt::rde::nx {
 
   :public method parse {script} {
 
-    set ns [uplevel [current activelevel] namespace current]
-
+    # set ns [uplevel [current callinglevel] namespace current]
+    set ns [:uplevel {namespace current}]
+    
     set ast [:parset $script]
 
     # TODO: Processing should happen in the factory, no calls back
