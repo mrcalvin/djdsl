@@ -1,5 +1,7 @@
 # DjDSL
 
+[![Build Status](https://travis-ci.com/mrcalvin/djdsl.svg?branch=master)](https://travis-ci.com/mrcalvin/djdsl)
+
 Develop variable and mixed, internal and external, domain-specific
 software languages. `djdsl` is provided as a bundle of Tcl modules
 (TMs).
