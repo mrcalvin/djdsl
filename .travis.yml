@@ -118,7 +118,7 @@ jobs:
       overwrite: true
       tag_name: ${TRAVIS_TAG}
       name: Latest DjDSL development build (${TRAVIS_BRANCH})
-      release_notes: Automated DjDSL development build.
+      body: Automated DjDSL development build.
       on:
         repo: mrcalvin/djdsl
         tags: true
