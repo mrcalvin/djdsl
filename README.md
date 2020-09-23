@@ -34,22 +34,23 @@ The supplemental material includes the multi-DSL development system DjDSL.
 ## Quickstart
 
 1. Download the self-contained executable (`djdslkit`) for your OS
-from the releases page. 
-2. Execute the `djdslkit` from your terminal or command prompt to enter the DjDSL/Tcl shell:
-  * Linux:
-    ```
-    $ chmod u+x djdslkit-latest-linux
-    $ ./djdslkit-latest-linux
-    ```
-  * macOS:
-    ```
-    $ chmod u+x djdslkit-latest-osx
-    $ ./djdslkit-latest-osx
-    ```
-  * Windows:
-    ```
-    C:\Your\User> djdslkit-latest-windows.exe
-    ```
+    from the [releases](/releases) page. 
+2. Execute `djdslkit` from your terminal or command prompt to enter
+   the DjDSL/Tcl shell:
+        * Linux:
+		```
+		$ chmod u+x djdslkit-latest-linux
+    	$ ./djdslkit-latest-linux
+		```
+		* macOS:
+		```
+		$ chmod u+x djdslkit-latest-osx
+    	$ ./djdslkit-latest-osx
+		```
+		* Windows:
+		```
+		C:\Your\User> djdslkit-latest-windows.exe
+		```
 3. In the DjDSL/Tcl shell prompt, load a DjDSL component and proceed
 by working through the various doctest examples or tutorials, e.g.:
 
