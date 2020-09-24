@@ -1,6 +1,9 @@
 # DjDSL
 
-[![Build Status](https://travis-ci.com/mrcalvin/djdsl.svg?branch=master)](https://travis-ci.com/mrcalvin/djdsl)
+[![License](https://img.shields.io/github/license/mrcalvin/djdsl)](https://opensource.org/licenses/MIT)
+[![Build status](https://travis-ci.com/mrcalvin/djdsl.svg?branch=master)](https://travis-ci.com/mrcalvin/djdsl)
+[![Latest release](https://img.shields.io/github/v/release/mrcalvin/djdsl?include_prereleases)](https://github.com/mrcalvin/djdsl/releases)
+[![Supported platforms](https://img.shields.io/badge/platform-windows%20%7C%20macos%20%7C%20linux-orange.svg)](https://en.wikipedia.org/wiki/Cross-platform)
 
 Develop variable and mixed, internal and external, domain-specific
 software languages. `djdsl` is provided as a bundle of Tcl modules
@@ -34,23 +37,26 @@ The supplemental material includes the multi-DSL development system DjDSL.
 ## Quickstart
 
 1. Download the self-contained executable (`djdslkit`) for your OS
-    from the [releases](/releases) page. 
+    from the [releases][] page. 
 2. Execute `djdslkit` from your terminal or command prompt to enter
    the DjDSL/Tcl shell:
-        * Linux:
-		```
-		$ chmod u+x djdslkit-latest-linux
-    	$ ./djdslkit-latest-linux
-		```
-		* macOS:
-		```
-		$ chmod u+x djdslkit-latest-osx
-    	$ ./djdslkit-latest-osx
-		```
-		* Windows:
-		```
-		C:\Your\User> djdslkit-latest-windows.exe
-		```
+
+On Linux:
+
+```
+$ chmod u+x djdslkit-latest-linux
+$ ./djdslkit-latest-linux
+```
+On macOS:
+```
+$ chmod u+x djdslkit-latest-osx
+$ ./djdslkit-latest-osx
+```
+On Windows:
+```
+C:\Your\User> djdslkit-latest-windows.exe
+```
+
 3. In the DjDSL/Tcl shell prompt, load a DjDSL component and proceed
 by working through the various doctest examples or tutorials, e.g.:
 
