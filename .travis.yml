@@ -15,7 +15,7 @@ branches:
 stages:
   - buildtest
   - name: deploy
-     if: branch = master
+    if: branch = master
 
 env:
   global:
