@@ -846,6 +846,7 @@ apply {{version prj code {test ""}} {
   #
 
   package require djdsl::v1e
+  namespace import ::djdsl::v1e::*
   
   #
   # A small excerpt from the GPL feature model, defined using the v1e
