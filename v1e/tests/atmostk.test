@@ -1,0 +1,147 @@
+package require tcltest
+eval ::tcltest::configure $argv
+
+package require djdsl::v1e
+
+namespace eval ::djdsl::v1e::test {
+  namespace import ::tcltest::*
+  namespace import ::djdsl::v1e::*
+  variable SETUP {set m1 [Model new]}
+  variable CLEANUP {$m1 destroy; unset m1}
+
+  test bdd-0_1 {} \
+    -body {
+    set m1 [Model newFromScript {
+    Root "Graph" {
+      Choice -lower 0 -upper 1 {
+        Feature -name "coloured"
+        Feature -name "weighted"
+        Feature -name "directed"
+      }
+    }
+  }]
+    puts [join [$m1 getValidConfigurations [$m1 nrValidConfigurations]] \n]
+    list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+    } \
+    -cleanup $CLEANUP \
+    -result 4-2-0-1-4
+  
+  test bdd-0_2 {} \
+    -body {
+    set m1 [Model newFromScript {
+    Root "Graph" {
+      Choice -lower 0 -upper 2 {
+        Feature -name "coloured"
+        Feature -name "weighted"
+        Feature -name "directed"
+      }
+    }
+  }]
+    puts [join [$m1 getValidConfigurations [$m1 nrValidConfigurations]] \n]
+    list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+    } \
+    -cleanup $CLEANUP \
+    -result 4-2-0-1-7
+  
+  test bdd-0_n {} \
+    -body {
+    set m1 [Model newFromScript {
+    Root "Graph" {
+      Choice -lower 0 -upper 3 {
+        Feature -name "coloured"
+        Feature -name "weighted"
+        Feature -name "directed"
+      }
+    }
+  }]
+    puts [join [$m1 getValidConfigurations [$m1 nrValidConfigurations]] \n]
+    list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+    } \
+    -cleanup $CLEANUP \
+    -result 4-2-0-1-8
+  
+  test bdd-1_2 {} \
+    -body {
+    set m1 [Model newFromScript {
+    Root "Graph" {
+      Choice -lower 1 -upper 2 {
+        Feature -name "coloured"
+        Feature -name "weighted"
+        Feature -name "directed"
+      }
+    }
+  }]
+    puts [join [$m1 getValidConfigurations [$m1 nrValidConfigurations]] \n]
+    list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+    } \
+    -cleanup $CLEANUP \
+    -result 4-2-0-1-6
+  
+  test bdd-1_n {} \
+    -body {
+    set m1 [Model newFromScript {
+    Root "Graph" {
+      Choice -lower 1 -upper 3 {
+        Feature -name "coloured"
+        Feature -name "weighted"
+        Feature -name "directed"
+      }
+    }
+  }]
+    puts [join [$m1 getValidConfigurations [$m1 nrValidConfigurations]] \n]
+    list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+    } \
+    -cleanup $CLEANUP \
+    -result 4-2-0-1-7
+  
+  test bdd-2_2 {} \
+    -body {
+    set m1 [Model newFromScript {
+    Root "Graph" {
+      Choice -lower 2 -upper 2 {
+        Feature -name "coloured"
+        Feature -name "weighted"
+        Feature -name "directed"
+      }
+    }
+  }]
+    puts [join [$m1 getValidConfigurations [$m1 nrValidConfigurations]] \n]
+    list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+    } \
+    -cleanup $CLEANUP \
+    -result 4-2-0-1-3
+  
+  test bdd-2_n {} \
+    -body {
+    set m1 [Model newFromScript {
+    Root "Graph" {
+      Choice -lower 2 -upper 3 {
+        Feature -name "coloured"
+        Feature -name "weighted"
+        Feature -name "directed"
+      }
+    }
+  }]
+    puts [join [$m1 getValidConfigurations [$m1 nrValidConfigurations]] \n]
+    list [llength [$m1 getOwnedElements Feature]]-[llength [$m1 getOwnedElements Choice]]-[llength [$m1 getOwnedElements Constraint]]-[$m1 isValid]-[$m1 nrValidConfigurations]
+    } \
+    -cleanup $CLEANUP \
+    -result 4-2-0-1-4
+
+
+  # TODO: implement this
+#    The multiplicity 0,2 is not implemented.
+#     while executing
+# "throw {V1E BDD NOTIMPLEMENTED} "The multiplicity [$c lower get],[$c upper get] is not implemented.""
+  
+  cleanupTests
+}
+
+#
+# Local variables:
+#    mode: tcl
+#    tcl-indent-level: 2
+#    indent-tabs-mode: nil
+# End:
+#
+# vim: set ft=tcl ts=2 sw=2 autoindent smartindent expandtab:

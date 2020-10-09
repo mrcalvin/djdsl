@@ -483,27 +483,24 @@ apply {{version prj code {test ""}} {
             } else {
               set p ${:model}
             }
-            
+
+            if {[$c lower get] > [$c upper get] ||
+                [$c lower get] > [llength [$c candidates get]] ||
+                [$c lower get] < 0 ||
+                [$c upper get] < 0} {
+                throw {V1E BDD INVALID} "The multiplicity [$c lower get],[$c upper get] is invalid."
+            }
+
             if {[$c lower get] == 0 && [$c upper get] == 1} {
               if {[llength [$c candidates get]] == 1} {
+                # [0,1] n=1
                 # optional, solitary sub-feature
                 set f [$c candidates get]
-                # puts "${:system} <= C$C $f $p"
                 ${:system} <= $c $f $p
               } else {
-                # TODO: is this needed?
+                # [0,1] n>1
                 # group of optional features
-              }
-            } elseif {[$c lower get] == 1 && [$c upper get] == 1} {
-              if {[llength [$c candidates get]] == 1} {
-                # mandatory, solitary sub-feature
-                set f [$c candidates get]
-                # ${:system} <= aC$C $p $f
-                # ${:system} <= bC$C $f $p
-                # ${:system} & C$C aC$C bC$C
-                ${:system} == $c $p $f
-              } else {
-                
+
                 # pt 1: disjunction term 
                 set cands [$c candidates get]
                 set r [lassign $cands c1 c2]
@@ -511,38 +508,144 @@ apply {{version prj code {test ""}} {
                 foreach rc $r {
                   ${:system} | tmp0 tmp0 $rc
                 }
-                # ${:system} <= aC$C tmp0 $p
-                # ${:system} <= bC$C $p tmp0
-                # ${:system} & C$C aC$C bC$C
-                ${:system} == $c tmp0 $p
-                # CHECK: unset tmp0 then?
+                ${:system} <= $c tmp0 $p
+                ${:system} unset tmp0
+                
                 # pt 2: pairwise exclusions
                 foreach comb [:comb2 $cands] {
                   lassign $comb c1 c2
-                  ${:system} & tmp3 $c1 $c2
-                  ${:system} ~ ntmp3 tmp3; # negate the term
-                  ${:system} & $c $c ntmp3 
+                  ${:system} & tmp1 $c1 $c2
+                  ${:system} ~ ntmp1 tmp1; # negate the term
+                  ${:system} & $c $c ntmp1 
+                  ${:system} unset tmp1
+                  ${:system} unset ntmp1
+                }
+              }
+            } elseif {[$c lower get] == 1 && [$c upper get] == 1} {
+              if {[llength [$c candidates get]] == 1} {
+                # [1,1] n=1
+                # mandatory, solitary sub-feature
+                set f [$c candidates get]
+                ${:system} == $c $p $f
+              } else {
+                # [1,1] n>1
+                # alternative features
+
+                # pt 1: disjunction term 
+                set cands [$c candidates get]
+                set r [lassign $cands c1 c2]
+                ${:system} | tmp0 $c1 $c2
+                foreach rc $r {
+                  ${:system} | tmp0 tmp0 $rc
+                }
+                ${:system} == $c tmp0 $p
+                ${:system} unset tmp0
+
+                # pt 2: pairwise exclusions
+                foreach comb [:comb2 $cands] {
+                  lassign $comb c1 c2
+                  ${:system} & tmp1 $c1 $c2
+                  ${:system} ~ ntmp1 tmp1; # negate the term
+                  ${:system} & $c $c ntmp1 
+                  ${:system} unset tmp1
+                  ${:system} unset ntmp1
                 }
               }
             } elseif {[$c lower get] == 1 && [$c upper get] > 1 &&
-                      [$c upper get] == [llength [$c candidates get]]} {
+						  [$c upper get] == [llength [$c candidates get]]} {
+              # [1,n]
+
               set r [lassign [$c candidates get] c1 c2]
-              ${:system} | tmp1 $c1 $c2
+              ${:system} | tmp0 $c1 $c2
               foreach rc $r {
-                ${:system} | tmp1 tmp1 $rc
+                ${:system} | tmp0 tmp0 $rc
               }
-              ${:system} == $c tmp1 $p
+              ${:system} == $c tmp0 $p
+              ${:system} unset tmp0
             } elseif {!([$c lower get] + [$c upper get])} {
-              # ${:system} ~ ntmp4 [$c candidates get]
-              # ${:system} == $c $p ntmp4
+              # [0,0] ?
+              
               ${:system} & $c 1 1
               foreach cand [$c candidates get] {
-                ${:system} ~ ntmp4 $cand
-                ${:system} & $c $c ntmp4
+                ${:system} ~ ntmp0 $cand
+                ${:system} & $c $c ntmp0
               }
-              ${:system} == $c $p ntmp4
+              ${:system} == $c $p ntmp0
+              ${:system} unset ntmp0
             } else {
-              throw {V1E BDD NOTIMPLEMENTED} "The multiplicity [$c lower get],[$c upper get] is not implemented."
+              if {[$c lower get] == 0 && [$c upper get] > 1 &&
+						  [$c upper get] == [llength [$c candidates get]]} {
+                # [0,n]
+                # Technically, this is not at-most-k
+                
+                set r [lassign [$c candidates get] c1 c2]
+                ${:system} | tmp0 $c1 $c2
+                foreach rc $r {
+                  ${:system} | tmp0 tmp0 $rc
+                }
+                ${:system} <= $c tmp0 $p
+                ${:system} unset ntmp0
+              } elseif {[$c lower get] >= 0 && [$c upper get] > 1} {
+                # [l,k] k>1
+                set cands [$c candidates get]
+                
+                # pt 1: disjunction term 
+                if {[$c lower get] <= 1} {
+                  # [0,k] k>1
+                  set r [lassign $cands c1 c2]
+                  ${:system} | tmp0 $c1 $c2
+                  foreach rc $r {
+                    ${:system} | tmp0 tmp0 $rc
+                  }
+                  if {[$c lower get] == 0} {
+                    ${:system} <= $c tmp0 $p
+                  } else {
+                    ${:system} == $c tmp0 $p
+                  }
+                  ${:system} unset tmp0
+                } else {
+                  # [l,k] l>0, k>1
+                  set kcomb [:combk $cands [$c lower get]]
+                  set combs [lassign $kcomb comb]
+
+                  set r [lassign $comb c1 c2]
+                  ${:system} & tmp0 $c1 $c2
+                  foreach rc $r {
+                    ${:system} & tmp0 tmp0 $rc
+                  }
+
+                  foreach comb $combs {
+                    set r [lassign $comb c1 c2]
+                    ${:system} & tmp1 $c1 $c2
+                    foreach rc $r {
+                      ${:system} & tmp1 tmp1 $rc
+                    }
+                    ${:system} | tmp0 tmp0 tmp1
+                    ${:system} unset tmp1
+                  }
+                  ${:system} == $c tmp0 $p
+                  ${:system} unset tmp0
+                }
+
+                # pt 2: exclude all k+1 combinations
+                set k [$c upper get]
+                set kcomb [:combk $cands [expr $k + 1]]
+
+                foreach comb $kcomb {
+                  set r [lassign $comb c1 c2]
+                  ${:system} & tmp1 $c1 $c2
+                  foreach rc $r {
+                    ${:system} & tmp1 tmp1 $rc
+                  }
+                  ${:system} ~ ntmp1 tmp1
+                  ${:system} & $c $c ntmp1
+                  ${:system} unset tmp1
+                  ${:system} unset ntmp1
+                }
+              } else {
+                # TODO: lower >1 (at-least-k?)
+                throw {V1E BDD NOTIMPLEMENTED} "The multiplicity [$c lower get],[$c upper get] is not implemented."
+              }
             }
 
             ${:system} & ${:model} ${:model} $c
@@ -572,6 +675,27 @@ apply {{version prj code {test ""}} {
               lappend out [list $x $y]
             }
           }
+          return $out
+        }
+
+        :protected method combk {in k} {
+          if {$k == 0} {
+            return [list {}]
+          } elseif {[llength $in] < $k} {
+            return [list]
+          } elseif {[llength $in] == $k} {
+            return [list $in]
+          }
+
+          set short_in [lassign $in x]
+
+          set out [:combk $short_in $k]
+
+          set c [:combk $short_in [expr {$k - 1}]]
+          foreach y $c {
+            lappend out [concat $x $y]
+          }
+
           return $out
         }
         
@@ -1027,3 +1151,4 @@ apply {{version prj code {test ""}} {
 #
 
 
+# vim: set ts=2 sw=2 autoindent smartindent expandtab:
