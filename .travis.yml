@@ -12,6 +12,11 @@ branches:
   except:
     - latest
 
+stages:
+  - buildtest
+  - name: deploy
+     if: branch = master
+
 env:
   global:
   - ERROR_ON_FAILURES=1
@@ -28,7 +33,7 @@ cache:
   
 jobs:
   include:
-  - stage: Building and testing
+  - stage: buildtest
     name: linux
     os: linux
     dist: focal
@@ -75,7 +80,7 @@ jobs:
         name: win-binaries
         paths:
           - ${ARTIFACT}
-  - stage: Deploying
+  - stage: deploy
     language: shell
     workspaces:
       use:
