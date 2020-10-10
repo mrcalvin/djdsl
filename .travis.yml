@@ -147,7 +147,7 @@ script:
   - cd kitcreator-tmp
   - KC_SHELL=${SHELL}
   - if [ $TRAVIS_OS_NAME = windows ]; then
-       KC_SHELL="travis_wait ${KC_SHELL}"
+       KC_SHELL="travis_wait ${KC_SHELL}";
      fi 
   - ${KC_SHELL} ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
   - cd $TRAVIS_BUILD_DIR
