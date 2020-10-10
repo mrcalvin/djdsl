@@ -68,7 +68,7 @@ jobs:
         $msys2 pacman --sync --noconfirm --needed base-devel mingw-w64-x86_64-toolchain
         taskkill //IM gpg-agent.exe //F
         export PATH=/c/tools/msys64/mingw64/bin:$PATH
-        export SHELL="travis_wait ${mingw64}"
+        export SHELL=${mingw64}
     before_cache:
     - $msys2 pacman --sync --clean --noconfirm
     cache:
@@ -145,7 +145,11 @@ script:
   - chmod u+x $TRAVIS_BUILD_DIR/kitcreator-tmp/djdsl/build.sh
   - export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
   - cd kitcreator-tmp
-  - ${SHELL} ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
+  - KC_SHELL=${SHELL}
+  - if [ $TRAVIS_OS_NAME = windows ]; then
+       KC_SHELL="travis_wait ${KC_SHELL}"
+     fi 
+  - ${KC_SHELL} ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
   - cd $TRAVIS_BUILD_DIR
   - ${SHELL} make TCLSH="$TRAVIS_BUILD_DIR/kitcreator-tmp/tclkit-8.6.10" test
   - if [ -z "$TRAVIS_TAG" ] ; then
