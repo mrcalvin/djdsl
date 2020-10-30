@@ -193,6 +193,14 @@ apply {{version prj code {test ""}} {
       return $rf
     }
 
+    # todo: FIX
+    :public method setRoot {args} {
+      set featName [lindex $args end]
+      ${:root} name set $featName
+      :featureSet $featName ${:root}
+      return ${:root}
+    }
+
     :public method define {elementType:class args} {
       set el [:require $elementType {*}$args]
       $el register
@@ -206,6 +214,7 @@ apply {{version prj code {test ""}} {
       } trap {V1E SPEC INVALID} {e opts} {
         return -code error -errorcode "V1E SPEC INVALID" $e
       } on error {e opts} {
+        puts OPTS=$opts
         return -code error -errorcode \
             "V1E SPEC INVALID" "Invalid '$elementType' specification: $args."
       }
@@ -248,10 +257,9 @@ apply {{version prj code {test ""}} {
         set :feats [dict]
       }
 
-      if {$obj in [dict values ${:feats}]} {
-        foreach k [dict keys [dict filter ${:feats} value $obj]] {
-          dict unset :feats $k
-        }
+      set existing [dict keys [dict filter ${:feats} value $obj]]
+      foreach k $existing {
+        dict unset :feats $k
       }
       
       dict set :feats $name $obj
@@ -386,11 +394,10 @@ apply {{version prj code {test ""}} {
 
     :public object method with {-rootFeature -ns spec} {      
       set m [:new]
-      set root [$m root get]
       if {[info exists rootFeature]} {
-       	$root name set $rootFeature
-        $m featureSet $rootFeature $root
+        $m setRoot $rootFeature
       }
+      
       if {[info exists ns]} {
         $m addFromScript $spec $ns
       } else {
@@ -491,6 +498,7 @@ apply {{version prj code {test ""}} {
                 # puts "${:system} <= C$C $f $p"
                 ${:system} <= $c $f $p
               } else {
+                puts "TODO: $c"
                 # TODO: is this needed?
                 # group of optional features
               }
