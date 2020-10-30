@@ -134,10 +134,10 @@ apply {{version prj code {test ""}} {
 
   set ogrm {
     #// tvl2 //
-    S            <- `Model` ROOT root:(`$root setRoot $0` FID) (OBRACKET AndGroup Constraint* CBRACKET)? !.;
-    # FeatureDeclBody  <- OBRACKET owned:(MPGroup / AndGroup / XorGroup / OrGroup )? Constraint* CBRACKET;
-    FeatureDeclBody  <- OBRACKET owned:MPGroup? Constraint* CBRACKET;
-    FeatureDeclInner <- `Feature` name:FID FeatureDeclBody?;
+    S            <- `Model` ROOT root:(`$root setRoot $0` FID) FeatureDeclBody? !.;
+    FeatureDeclBody  <- OBRACKET (MPGroup / AndGroup / XorGroup / OrGroup )? Constraint* CBRACKET;
+    # FeatureDeclBody  <- OBRACKET owned:MPGroup? Constraint* CBRACKET;
+    FeatureDeclInner <- `Feature` name:FID owned:FeatureDeclBody?;
     FeatureDeclOuter <- `Choice` (lower:(`0` OPT))? candidates:FeatureDeclInner;
     AndGroup     <- GROUP ALLOF OBRACKET
                     FeatureDeclOuter (COMMA FeatureDeclOuter)*
@@ -309,6 +309,22 @@ apply {{version prj code {test ""}} {
   ? {$o nrValidConfigurations} 6
   # $o nrValidConfigurations
 
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group [3..3] {
+            a, b, c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 1
+  ? {$m getValidConfigurations} {{f a b c}}
+
+
+  
   # allof
   # root f group [3..3] {
   #   a, opt b, c
