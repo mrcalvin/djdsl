@@ -629,7 +629,7 @@ apply {{version prj code {test ""}} {
 
                 # pt 2: exclude all k+1 combinations
                 set k [$c upper get]
-                set kcomb [:combk $cands [expr $k + 1]]
+                set kcomb [:combk $cands [expr {$k + 1}]]
 
                 foreach comb $kcomb {
                   set r [lassign $comb c1 c2]
