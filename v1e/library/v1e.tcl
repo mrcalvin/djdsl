@@ -2,7 +2,8 @@
 #
 # MIT License
 #
-# Copyright (c) 2017-2019 Stefan Sobernig <stefan.sobernig@wu.ac.at>
+# Copyright (c) 2017-2020 Stefan Sobernig <stefan.sobernig@wu.ac.at>
+# Copyright (c) 2020 Olaf Lessenich <olaf.lessenich@wu.ac.at>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
