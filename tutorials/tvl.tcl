@@ -99,7 +99,7 @@ apply {{version prj code {test ""}} {
     Group        <- GROUP Multiplicity OBRACKET
                     OPT? FeatureDecl (COMMA OPT? FeatureDecl)*
                     CBRACKET;
-    Multiplicity <- ALLOF / ONEOF / SOMEOF ;
+    Multiplicity <- ALLOF / ONEOF / SOMEOF / OMP ('*' / <digit>+) SEPMP ('*' / <digit>+) CMP ;
     FID          <- <alnum>+ ;
     Constraint   <- Expr SCOLON / REQUIRE COLON FID SCOLON /
                     EXCLUDE COLON FID ;
@@ -114,6 +114,9 @@ apply {{version prj code {test ""}} {
     void:  CPARENS <- WS ')' WS ;
     void:  OBRACKET <- WS '{' WS ;
     void:  CBRACKET <- WS '}' WS;
+    void:  OMP <- WS '\[' WS ;
+    void:  CMP <- WS '\]' WS ;
+    void:  SEPMP <- WS '..' WS ;
     void:  ROOT     <- WS 'root' WS ;
     void:  GROUP    <- WS 'group' WS ;
     void:  OPT      <- WS 'opt' WS ;
