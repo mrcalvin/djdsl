@@ -323,6 +323,40 @@ apply {{version prj code {test ""}} {
   ? {$m nrValidConfigurations} 1
   ? {$m getValidConfigurations} {{f a b c}}
 
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group allOf {
+            a, opt b, c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 2
+  ? {$m getValidConfigurations} {{f a c} {f a b c}}
+
+  # TODO:
+  # - implement decrementing lower bound;
+  # - [*..*] should be handled like allOf (no and-decomposition);
+  # - how to handle [n..n] for n = |children| ? like allOf, but how to process? postprocess?
+
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group [3..3] {
+            a, opt b, c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 1
+  ? {$m getValidConfigurations} {{f a b c}}
+
+
 
   
   # allof
