@@ -134,19 +134,19 @@ apply {{version prj code {test ""}} {
 
   set ogrm {
     #// tvl2 //
-    S            <- `Model` ROOT root:(`$root setRoot $0` FID) FeatureDeclBody? !.;
+    S            <- `Model` ROOT root:(`$root setRoot $0` FID) (owned:FeatureDeclBody)? !.;
     FeatureDeclBody  <- OBRACKET (MPGroup / AndGroup / XorGroup / OrGroup )? Constraint* CBRACKET;
     # FeatureDeclBody  <- OBRACKET owned:MPGroup? Constraint* CBRACKET;
-    FeatureDeclInner <- `Feature` name:FID owned:FeatureDeclBody?;
+    FeatureDeclInner <- `Feature` name:FID (owned:FeatureDeclBody)?;
     FeatureDeclOuter <- `Choice` (lower:(`0` OPT))? candidates:FeatureDeclInner;
     AndGroup     <- GROUP ALLOF OBRACKET
                     FeatureDeclOuter (COMMA FeatureDeclOuter)*
                     CBRACKET;
-    XorGroup     <- `Choice` GROUP ONEOF OBRACKET GroupDecls;
-    OrGroup     <- `Choice` GROUP upper:(`$current candidatesCount` SOMEOF) OBRACKET GroupDecls;
-    MPGroup     <- `Choice` GROUP OMP lower:(`$current candidatesCount` '*' / <digit>+) SEPMP upper:(`$current candidatesCount` '*' / <digit>+) CMP OBRACKET GroupDecls;
-    GroupDecls       <- (lower:(`0` OPT))? candidates:FeatureDeclInner (COMMA (lower:(`0` OPT))? candidates:FeatureDeclInner)*                     
-                     CBRACKET;
+    XorGroup     <- `Choice` GROUP ONEOF OBRACKET GroupDecls CBRACKET;
+    OrGroup     <- `Choice` GROUP upper:(`$current candidatesCount` SOMEOF) OBRACKET GroupDecls CBRACKET;
+    MPGroup     <- `Choice` GROUP OMP lower:(`$current candidatesCount` '*' / <digit>+) SEPMP upper:(`$current candidatesCount` '*' / <digit>+) CMP OBRACKET GroupDecls CBRACKET;
+    # GroupDecls       <- (lower:(`0` OPT))? candidates:FeatureDeclInner (COMMA (lower:(`0` OPT))? candidates:FeatureDeclInner)*
+    GroupDecls       <- (OPT optionals:FeatureDeclInner / mandatories:FeatureDeclInner) (COMMA (OPT optionals:FeatureDeclInner / mandatories:FeatureDeclInner))*;
 
     # Multiplicity <- ALLOF / ONEOF ;
     FID          <- <alnum>+ ;
@@ -281,17 +281,95 @@ apply {{version prj code {test ""}} {
         puts stderr "HERE1:         ${:context} define $generator {*}$asgmt"
         ${:context} define $generator {*}$asgmt
       } else {
-        puts stderr "HERE2"
+        puts stderr "HERE2=$asgmt"
         if {[llength $asgmt]} {
-          ${:context} configure {*}$asgmt
+          [${:context} root get] configure {*}$asgmt
+          [${:context} root get] register
         }
         return ${:context}
       }
     }
   }
 
+  Model mixins add [nx::Class new {
+    :public method setRoot {args} {
+      set r [next [lindex $args end]]
+      $r rewriteChoices
+      return $r
+    }
+    
+    # :public method rewriteChoices {} {
+    #   if {[info exists :choicesWithOpts]} {
+    #     foreach choice ${:choicesWithOpts} {
+    #       $choice rewrite
+    #     }
+    #   }
+    # }
+   
+  }]
+
+  Feature mixins add [nx::Class new {
+    :public method register {} {
+      next
+      :rewriteChoices
+    }
+    
+    :public method rewriteChoices {} {
+      puts rewriteChoices([:name get])=[info exists :owned]
+      if {[info exists :owned]} {
+        foreach choice ${:owned} {
+          $choice rewrite
+          # $choice destroy
+        }
+      }
+    }
+   
+  }]
+  
   Choice mixins add [nx::Class new {
-    :public method candidatesCount {_} {
+    :property -accessor public optionals:object,type=Feature,0..* {
+      :public object method value=set {obj prop values} {
+        puts stderr ===OPTS=$values
+        next
+        foreach v $values {
+          $obj candidates add $v
+        }
+      }
+    }
+    :property -accessor public mandatories:object,type=Feature,0..* {
+      :public object method value=set {obj prop values} {
+        next
+        foreach v $values {
+          $obj candidates add $v
+        }
+      }
+    }
+
+    :public method rewrite {} {
+      puts REWRITE-[:optionals exists]-[:lower get]-[:upper get]
+      if {[:optionals exists]} {
+        if {[:lower get] && [:upper get] == [:candidatesCount] && [:lower get] == [:upper get]} {
+          foreach cand ${:candidates} {
+            set oc [${:model} define [:info class] \
+                        -lower [expr {$cand in ${:mandatories}}] \
+                        -upper 1 \
+                        -context ${:context} \
+                        -candidates $cand]
+            $oc register
+            lappend choices $oc
+          }
+          # puts ....[${:context} info class]
+          ${:context} owned set $choices
+          # TODO: fix cleanup
+          ${:model} eval [list :owned delete [self]]
+          :destroy
+        } else {
+          :lower set 0
+        }
+      }
+    }
+
+    :public method candidatesCount {args} {
       if {[info exists :candidates]} {
         return [llength ${:candidates}]
       } else {
@@ -300,6 +378,13 @@ apply {{version prj code {test ""}} {
     }
   }]
 
+
+  # allof: w/ and w/o optionals
+  # ----------------
+  # root f group [3..3] {
+  #   a, opt b, c
+  # }
+  # {f, a, b, c}, {f, a, c}
   
   set tvlOParser [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
   set o [$tvlOParser parse $s]
@@ -337,11 +422,6 @@ apply {{version prj code {test ""}} {
   ? {$m nrValidConfigurations} 2
   ? {$m getValidConfigurations} {{f a c} {f a b c}}
 
-  # TODO:
-  # - implement decrementing lower bound;
-  # - [*..*] should be handled like allOf (no and-decomposition);
-  # - how to handle [n..n] for n = |children| ? like allOf, but how to process? postprocess?
-
   set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
   set m [$p parse {
     root f {
@@ -353,32 +433,186 @@ apply {{version prj code {test ""}} {
 
   ? {$m info class} ::djdsl::v1e::Model
   ? {[$m root get] name get} "f"
-  ? {$m nrValidConfigurations} 1
-  ? {$m getValidConfigurations} {{f a b c}}
+  ? {$m nrValidConfigurations} 2
+  ? {$m getValidConfigurations} {{f a c} {f a b c}}
 
+  # someof: w/o optional
+  # root f group [1..3] {
+  #  a, b, c
+  #}
+  # {f, c}, {f, b} {f, b, c}, {f, a}, {f, a, c}, {f, a, b}, {f, a, b, c}
 
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group [1..3] {
+        a, b, c
+      }
+    }
+  }]
 
-  
-  # allof
-  # root f group [3..3] {
-  #   a, opt b, c
-  # }
-  # {f, a, b, c}, {f, a, c}
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 7
+  ? {$m getValidConfigurations} {{f c} {f b} {f b c} {f a} {f a c} {f a b} {f a b c}}
 
-  # someof
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group someOf {
+        a, b, c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 7
+  ? {$m getValidConfigurations} {{f c} {f b} {f b c} {f a} {f a c} {f a b} {f a b c}}
+
+  # someof: w/ optional
   # root f group [1..3] {
   #  a, opt b, c
   #}
-  # {f}, {f, a}, {f, a, c}, {f, a, b, c}
+  # {f}, {f, c}, {f, b} {f, b, c}, {f, a}, {f, a, c}, {f, a, b}, {f, a, b, c}
 
-  # oneof
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group someOf {
+        a, opt b, c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 8
+  ? {$m getValidConfigurations} {f {f c} {f b} {f b c} {f a} {f a c} {f a b} {f a b c}}
+
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group someOf {
+        a, opt b, opt c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 8
+  ? {$m getValidConfigurations} {f {f c} {f b} {f b c} {f a} {f a c} {f a b} {f a b c}}
+
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group [1..3] {
+        a, opt b, c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 8
+  ? {$m getValidConfigurations} {f {f c} {f b} {f b c} {f a} {f a c} {f a b} {f a b c}}
+
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group [0..3] {
+        a, opt b, c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 8
+  ? {$m getValidConfigurations} {f {f c} {f b} {f b c} {f a} {f a c} {f a b} {f a b c}}
+
+  # oneof w/o optionals
+  # root f group [1..1] {
+  #  a, b, c
+  # }
+  # {f, a}, {f, b}, {f, c}
+
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group [1..1] {
+        a, b, c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 3
+  ? {$m getValidConfigurations} {{f c} {f b} {f a}}
+
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group oneOf {
+        a, b, c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 3
+  ? {$m getValidConfigurations} {{f c} {f b} {f a}}
+
+  # oneof w/o optionals
   # root f group [1..1] {
   #  a, opt b, c
   # }
   # {f}, {f, a}, {f, b}, {f, c}
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group [1..1] {
+        a, opt b, c
+      }
+    }
+  }]
 
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 4
+  ? {$m getValidConfigurations} {f {f c} {f b} {f a}}
 
-  
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group oneOf {
+        a, opt b, c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 4
+  ? {$m getValidConfigurations} {f {f c} {f b} {f a}}
+
+  set p [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
+  set m [$p parse {
+    root f {
+      group oneOf {
+        a, opt b, opt c
+      }
+    }
+  }]
+
+  ? {$m info class} ::djdsl::v1e::Model
+  ? {[$m root get] name get} "f"
+  ? {$m nrValidConfigurations} 4
+  ? {$m getValidConfigurations} {f {f c} {f b} {f a}}
+
   set m1 [Model new {
     :setRoot "MultiLingualHelloWorld"
     :define Choice -context ${:root} -lower 1 -upper 1 \
