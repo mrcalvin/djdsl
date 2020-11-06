@@ -194,9 +194,8 @@ apply {{version prj code {test ""}} {
       return $rf
     }
 
-    # todo: FIX
-    :public method setRoot {args} {
-      set featName [lindex $args end]
+    :public method setRoot {featName} {
+      # set featName [lindex $args end]
       ${:root} name set $featName
       :featureSet $featName ${:root}
       return ${:root}
