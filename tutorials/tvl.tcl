@@ -133,20 +133,27 @@ apply {{version prj code {test ""}} {
   Grammar create TVLGrm -start S $grm
 
   set ogrm {
-    #// tvl2 //
+    #// tvl2a //
     S                <- `Model` ROOT root:(`$root setRoot $0` FID) (owned:FeatureDeclBody)? !. ;
     FeatureDeclBody  <- OBRACKET (MPGroup / AndGroup / XorGroup / OrGroup )? Constraint* CBRACKET ;
+    
+    FID              <- <alnum>+ ;
     FeatureDeclInner <- `Feature` name:FID (owned:FeatureDeclBody)? ;
-    FeatureDeclOuter <- `Choice` (lower:(`0` OPT))? candidates:FeatureDeclInner ;
+    #// end //
+    #// tvl2b //
     AndGroup         <- GROUP ALLOF OBRACKET FeatureDeclOuter (COMMA FeatureDeclOuter)* CBRACKET ;
+    FeatureDeclOuter <- `Choice` (lower:(`0` OPT))? candidates:FeatureDeclInner ;
+    
     XorGroup         <- `Choice` GROUP ONEOF OBRACKET GroupDecls CBRACKET ;
     OrGroup          <- `Choice` GROUP upper:(`$current card` SOMEOF) OBRACKET GroupDecls CBRACKET ;
+    
     MPGroup          <- `Choice` GROUP Multiplicity OBRACKET GroupDecls CBRACKET ;
     Multiplicity     <- OMP lower:(`$current card` '*' / <digit>+) SEPMP
                         upper:(`$current card` '*' / <digit>+) CMP ;
+    #// end //
+    #// tvl2c //
     GroupDecls       <- (OPT optionals:FeatureDeclInner / mandatories:FeatureDeclInner)
                         (COMMA (OPT optionals:FeatureDeclInner / mandatories:FeatureDeclInner))* ;
-    FID              <- <alnum>+ ;
     #// end //
     Constraint   <- Expr SCOLON / REQUIRE COLON FID SCOLON /
                     EXCLUDE COLON FID ;
