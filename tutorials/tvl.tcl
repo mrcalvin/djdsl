@@ -134,28 +134,25 @@ apply {{version prj code {test ""}} {
 
   set ogrm {
     #// tvl2 //
-    S            <- `Model` ROOT root:(`$root setRoot $0` FID) (owned:FeatureDeclBody)? !.;
-    FeatureDeclBody  <- OBRACKET (MPGroup / AndGroup / XorGroup / OrGroup )? Constraint* CBRACKET;
-    # FeatureDeclBody  <- OBRACKET owned:MPGroup? Constraint* CBRACKET;
-    FeatureDeclInner <- `Feature` name:FID (owned:FeatureDeclBody)?;
-    FeatureDeclOuter <- `Choice` (lower:(`0` OPT))? candidates:FeatureDeclInner;
-    AndGroup     <- GROUP ALLOF OBRACKET
-                    FeatureDeclOuter (COMMA FeatureDeclOuter)*
-                    CBRACKET;
-    XorGroup     <- `Choice` GROUP ONEOF OBRACKET GroupDecls CBRACKET;
-    OrGroup     <- `Choice` GROUP upper:(`$current candidatesCount` SOMEOF) OBRACKET GroupDecls CBRACKET;
-    MPGroup     <- `Choice` GROUP OMP lower:(`$current candidatesCount` '*' / <digit>+) SEPMP upper:(`$current candidatesCount` '*' / <digit>+) CMP OBRACKET GroupDecls CBRACKET;
-    # GroupDecls       <- (lower:(`0` OPT))? candidates:FeatureDeclInner (COMMA (lower:(`0` OPT))? candidates:FeatureDeclInner)*
-    GroupDecls       <- (OPT optionals:FeatureDeclInner / mandatories:FeatureDeclInner) (COMMA (OPT optionals:FeatureDeclInner / mandatories:FeatureDeclInner))*;
-
-    # Multiplicity <- ALLOF / ONEOF ;
-    FID          <- <alnum>+ ;
+    S                <- `Model` ROOT root:(`$root setRoot $0` FID) (owned:FeatureDeclBody)? !. ;
+    FeatureDeclBody  <- OBRACKET (MPGroup / AndGroup / XorGroup / OrGroup )? Constraint* CBRACKET ;
+    FeatureDeclInner <- `Feature` name:FID (owned:FeatureDeclBody)? ;
+    FeatureDeclOuter <- `Choice` (lower:(`0` OPT))? candidates:FeatureDeclInner ;
+    AndGroup         <- GROUP ALLOF OBRACKET FeatureDeclOuter (COMMA FeatureDeclOuter)* CBRACKET ;
+    XorGroup         <- `Choice` GROUP ONEOF OBRACKET GroupDecls CBRACKET ;
+    OrGroup          <- `Choice` GROUP upper:(`$current card` SOMEOF) OBRACKET GroupDecls CBRACKET ;
+    MPGroup          <- `Choice` GROUP Multiplicity OBRACKET GroupDecls CBRACKET ;
+    Multiplicity     <- OMP lower:(`$current card` '*' / <digit>+) SEPMP
+                        upper:(`$current card` '*' / <digit>+) CMP ;
+    GroupDecls       <- (OPT optionals:FeatureDeclInner / mandatories:FeatureDeclInner)
+                        (COMMA (OPT optionals:FeatureDeclInner / mandatories:FeatureDeclInner))* ;
+    FID              <- <alnum>+ ;
+    #// end //
     Constraint   <- Expr SCOLON / REQUIRE COLON FID SCOLON /
                     EXCLUDE COLON FID ;
     Expr         <- 'True' / 'False' / FID;
     UnOp         <- WS '!' WS;
     BinOp        <- WS ('||' / '&&' / '->' / '<->' / '==' / '!=') WS;
-    #// end //
     void:  COMMA   <- WS ',' WS;
     void:  COLON   <- WS ':' WS;
     void:  SCOLON   <- WS ';' WS;
@@ -348,7 +345,7 @@ apply {{version prj code {test ""}} {
     :public method rewrite {} {
       puts REWRITE-[:optionals exists]-[:lower get]-[:upper get]
       if {[:optionals exists]} {
-        if {[:lower get] && [:upper get] == [:candidatesCount] && [:lower get] == [:upper get]} {
+        if {[:lower get] && [:upper get] == [:card] && [:lower get] == [:upper get]} {
           foreach cand ${:candidates} {
             set oc [${:model} define [:info class] \
                         -lower [expr {$cand in ${:mandatories}}] \
@@ -369,7 +366,7 @@ apply {{version prj code {test ""}} {
       }
     }
 
-    :public method candidatesCount {args} {
+    :public method card {args} {
       if {[info exists :candidates]} {
         return [llength ${:candidates}]
       } else {
