@@ -1709,6 +1709,7 @@ apply {{version prj code {test ""}} {
         set later [list]
         set changed 0
         foreach cmd $cmds {
+          puts CMD=$cmd
           try $cmd on error {e} {puts $e; lappend later $cmd} on ok {} {set changed 1}
         }
         set cmds $later
@@ -1796,7 +1797,7 @@ apply {{version prj code {test ""}} {
               #
               set lambda "return $path"
             }
-            lappend fixCmds [list $obj eval ":configure -$field \[[list apply [list {0 root} $lambda] $val $root]\]"]
+            lappend fixCmds [list $obj eval ":configure -$field \[[list apply [list {0 root current} $lambda] $val $root $obj]\]"]
           }
         }
         # evaluate fixCmds
