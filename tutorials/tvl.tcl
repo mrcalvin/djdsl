@@ -134,7 +134,8 @@ apply {{version prj code {test ""}} {
 
   set ogrm {
     #// tvl2a //
-    S          <- `Model` ROOT root:(`$root setRoot $0` FID) (owned:FDeclBody)? !. ;
+    S          <- `Model` ROOT root:(`$root setRoot $0` FID)
+                              (owned:FDeclBody)? !. ;
     FID        <- <alnum>+ ;
     FDeclInner <- `Feature` name:FID (owned:FDeclBody)? ;
     #// end //
