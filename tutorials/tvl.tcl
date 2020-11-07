@@ -140,23 +140,25 @@ apply {{version prj code {test ""}} {
     FDeclInner <- `Feature` name:FID (owned:FDeclBody)? ;
     #// end //
     #// tvl2b //
-    FDeclBody  <- OBRACKET Group? Constraint* CBRACKET ;
-    Group      <- MPGroup / AndGroup / XorGroup / OrGroup;   
+    FDeclBody  <- OBRACKET Group? Constraint* CBRACKET;
+    Group      <- MPGroup / AndGroup / XorGroup / OrGroup;
 
+    MPGroup    <- `Choice` GROUP Multipl OBRACKET GDecls CBRACKET;
+    Multipl    <- OMP lower:(`$current card` '*' / <digit>+) SEPMP
+                  upper:(`$current card` '*' / <digit>+) CMP;
+
+    GDecls     <- GDecl (COMMA GDecl)*;
+    GDecl      <- OPT optionals:FDeclInner / mandatories:FDeclInner;
+    #// end //
+
+    #// tvl2c //
     AndGroup   <- GROUP ALLOF OBRACKET FDeclOuter (COMMA FDeclOuter)* CBRACKET ;
     FDeclOuter <- `Choice` (lower:(`0` OPT))? candidates:FDeclInner ;
     
-    XorGroup   <- `Choice` GROUP ONEOF OBRACKET GroupDecls CBRACKET ;
-    OrGroup    <- `Choice` GROUP upper:(`$current card` SOMEOF) OBRACKET GroupDecls CBRACKET ;
-    
-    MPGroup    <- `Choice` GROUP Multipl OBRACKET GroupDecls CBRACKET ;
-    Multipl    <- OMP lower:(`$current card` '*' / <digit>+) SEPMP
-                      upper:(`$current card` '*' / <digit>+) CMP ;
+    XorGroup   <- `Choice` GROUP ONEOF OBRACKET GDecls CBRACKET ;
+    OrGroup    <- `Choice` GROUP upper:(`$current card` SOMEOF) OBRACKET GDecls CBRACKET ;
     #// end //
-    #// tvl2c //
-    GroupDecls       <- (OPT optionals:FDeclInner / mandatories:FDeclInner)
-                        (COMMA (OPT optionals:FDeclInner / mandatories:FDeclInner))* ;
-    #// end //
+
     Constraint   <- Expr SCOLON / REQUIRE COLON FID SCOLON /
                     EXCLUDE COLON FID ;
     Expr         <- 'True' / 'False' / FID;
