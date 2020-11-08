@@ -1710,7 +1710,6 @@ apply {{version prj code {test ""}} {
         set changed 0
         foreach cmd $cmds {
           # puts CMD=$cmd
-          
           try $cmd on error {e} {puts $e; lappend later $cmd} on ok {} {set changed 1}
         }
         set cmds $later
