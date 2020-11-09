@@ -728,14 +728,14 @@ apply {{version prj code {test ""}} {
         set v1e {
           PEG v1e (Expression)
           #// constrL //
-          Expression   <- _ Term (_ BinaryOp _ Term)?;
+          Expression <- _ Term (_ BinaryOp _ Term)?;
           Term	     <- NotOp? _ (Variable / '(' Expression ')');
-          leaf:   BinaryOp     <- AndOp / OrOp;
-          AndOp 	     <- 'and' / '&&';
+    leaf: BinaryOp   <- AndOp / OrOp;
+          AndOp      <- 'and' / '&&';
           OrOp	     <- 'or' / '||';
-          NotOp 	     <- 'not' / '-';
-          Variable     <- <alnum>+;
-          void:	_	     <- <space>*;
+          NotOp      <- 'not' / '-';
+          Variable   <- <alnum>+;
+          void:	_    <- <space>*;
           #// end //
           END;}
 

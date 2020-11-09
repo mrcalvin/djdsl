@@ -133,13 +133,13 @@ apply {{version prj code {test ""}} {
   Grammar create TVLGrm -start S $grm
 
   set ogrm {
-    #// tvl2a //
+#// tvl2a //
     S          <- `Model` ROOT root:(`$root setRoot $0` FID)
                               (owned:FDeclBody)? !. ;
     FID        <- <alnum>+ ;
     FDeclInner <- `Feature` name:FID (owned:FDeclBody)? ;
-    #// end //
-    #// tvl2b //
+#// end //
+#// tvl2b //
     FDeclBody  <- OBRACKET Group? Constraint* CBRACKET;
     Group      <- MPGroup / AndGroup / XorGroup / OrGroup;
 
@@ -149,43 +149,45 @@ apply {{version prj code {test ""}} {
 
     GDecls     <- GDecl (COMMA GDecl)*;
     GDecl      <- OPT optionals:FDeclInner / mandatories:FDeclInner;
-    #// end //
+#// end //
 
-    #// tvl2c //
+#// tvl2c //
     AndGroup   <- GROUP ALLOF OBRACKET FDeclOuter (COMMA FDeclOuter)* CBRACKET ;
     FDeclOuter <- `Choice` (lower:(`0` OPT))? candidates:FDeclInner ;
     
     XorGroup   <- `Choice` GROUP ONEOF OBRACKET GDecls CBRACKET ;
     OrGroup    <- `Choice` GROUP upper:(`$current card` SOMEOF) OBRACKET GDecls CBRACKET ;
-    #// end //
+#// end //
 
-    Constraint   <- Expr SCOLON / REQUIRE COLON FID SCOLON /
-                    EXCLUDE COLON FID ;
-    Expr         <- 'True' / 'False' / FID;
-    UnOp         <- WS '!' WS;
-    BinOp        <- WS ('||' / '&&' / '->' / '<->' / '==' / '!=') WS;
-    void:  COMMA   <- WS ',' WS;
-    void:  COLON   <- WS ':' WS;
-    void:  SCOLON   <- WS ';' WS;
-    void:  OPARENS <- WS '(' WS ;
-    void:  CPARENS <- WS ')' WS ;
-    void:  OMP <- WS '\[' WS ;
-    void:  CMP <- WS '\]' WS ;
-    void:  SEPMP <- WS '..' WS ;
-    void:  OBRACKET <- WS '{' WS ;
-    void:  CBRACKET <- WS '}' WS;
-    void:  ROOT     <- WS 'root' WS ;
-    void:  GROUP    <- WS 'group' WS ;
-    void:  OPT      <- WS 'opt' WS ;
-    void:  ALLOF    <- WS 'allOf' WS ;
-    void:  ONEOF    <- WS 'oneOf' WS ;
-    void:  SOMEOF    <- WS 'someOf' WS ;
-    void:  REQUIRE  <- WS 'require' WS ;
-    void:  EXCLUDE  <- WS 'exclude' WS ;
-    void:  WS       <- (COMMENT / <space>)*;
-    void:  COMMENT  <- '//' (!EOL .)* EOL ;
-    void:  EOL      <- '\n' / '\r' ;
-  }
+#// tvl2d //
+    Constraint <- Expr SCOLON / REQUIRE COLON FID SCOLON /
+                     EXCLUDE COLON FID ;
+    Expr       <- 'True' / 'False' / FID;
+    UnOp       <- WS '!' WS;
+    BinOp      <- WS ('||' / '&&' / '->' / '<->' / '==' / '!=') WS;
+void: COMMA    <- WS ',' WS;
+void: COLON    <- WS ':' WS;
+void: SCOLON   <- WS ';' WS;
+void: OPARENS  <- WS '(' WS ;
+void: CPARENS  <- WS ')' WS ;
+void: OMP      <- WS '\[' WS ;
+void: CMP      <- WS '\]' WS ;
+void: SEPMP    <- WS '..' WS ;
+void: OBRACKET <- WS '{' WS ;
+void: CBRACKET <- WS '}' WS;
+void: ROOT     <- WS 'root' WS ;
+void: GROUP    <- WS 'group' WS ;
+void: OPT      <- WS 'opt' WS ;
+void: ALLOF    <- WS 'allOf' WS ;
+void: ONEOF    <- WS 'oneOf' WS ;
+void: SOMEOF   <- WS 'someOf' WS ;
+void: REQUIRE  <- WS 'require' WS ;
+void: EXCLUDE  <- WS 'exclude' WS ;
+void: WS       <- (COMMENT / <space>)*;
+void: COMMENT  <- '//' (!EOL .)* EOL ;
+void: EOL      <- '\n' / '\r' ;
+#// end //
+}
 
   Grammar create TVLOGrm -start S $ogrm
 
