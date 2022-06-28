@@ -200,6 +200,7 @@ void: WS   <- <space>+;
 
   test opeg-0.7 "Define grammars + merge + transforms" -setup $SETUP -body {
 
+    #// merge2 //
     # G0 (composed grammar)
     Grammar create ::G0 -start S
 
@@ -209,7 +210,6 @@ void: WS   <- <space>+;
       B <- 'b';
     }
 
-    #// merge2 //
     # G1 (receiving grammar)
     Grammar create ::G1 -merges G0 -start A {
       A <- ('a' / 'A') A / D;
