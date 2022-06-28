@@ -1931,12 +1931,12 @@ apply {{version prj code {test ""}} {
   
   set grammar [Grammar create MissGrants -start M {
 #// mgc4 //
-      M  <- `StateMachine` START start:<alnum>+ states:S+ ;
-      S  <- `State` STATE name:<alnum>+ transitions:T* ;
+M  <- `StateMachine` START start:<alnum>+ states:S+ ;
+S  <- `State` STATE name:<alnum>+ transitions:T* ;
 #// end //
 #// mgc3 //
-    T  <- `Transition` trigger:E GO target:<alnum>+ /
-          `Transition` GO target:<alnum>+ trigger:E;
+T <- `Transition` trigger:E GO target:<alnum>+ /
+     `Transition` GO target:<alnum>+ trigger:E;
 #// end //
 #// mgc1 //
       E  <- `Event` ON name:<alnum>+ ;
@@ -2070,8 +2070,9 @@ void: WS <- <space>+;
 
   set grammar [Grammar new -name MissGrants -start M {
 #// mgc7 //
-       M <- `StateMachine` START start:(`$root states $0` <alnum>+)
-            states:S+ ;
+M <- `StateMachine` START
+      start:(`$root states $0` <alnum>+)
+      states:S+ ;
 #// end //
        S <- `State` STATE name:<alnum>+ TRANS? ;
    TRANS <- transitions:T TRANS*;
@@ -2342,13 +2343,16 @@ leaf: Num         <- Sign? Digit+                      			       ;
   set dotGrammar [Grammar newFromScript {
     OPEG Dot (G)
     #// gpl3Node //  
-    G           <- `Graph` GRAPH OBRACKET StmtList CBRACKET;
+    G           <- `Graph` GRAPH OBRACKET
+                    StmtList CBRACKET;
     StmtList    <- (Stmt SCOLON)*;
     Stmt        <- edges:EdgeStmt / NodeStmt;
     #// end //  
     #// gpl2Node //  
-    EdgeStmt    <- `Edge` a:(`$root nodes $0` NodeID) EDGEOP
-                          b:(`$root nodes $0` NodeID);
+    EdgeStmt    <- `Edge`
+                   a:(`$root nodes $0` NodeID)
+                   EDGEOP
+                   b:(`$root nodes $0` NodeID);
     #// end //  
     #// gpl1Node //  
     NodeStmt    <- `Node` name:NodeID;
@@ -2399,8 +2403,10 @@ leaf: Num         <- Sign? Digit+                      			       ;
       "2nd Edition";
       "3rd Edition";
       // edge definitions
-      "1st Edition" -- "2nd Edition" [weight = 5];
-      "2nd Edition" -- "3rd Edition" [weight = 10];
+      "1st Edition" -- "2nd Edition"
+       [weight = 5];
+      "2nd Edition" -- "3rd Edition"
+       [weight = 10];
     }
     #// end //
   }
@@ -2462,7 +2468,8 @@ leaf: Num         <- Sign? Digit+                      			       ;
     #// gplWeighted2a //
     # a) receiving rules
     EdgeStmt    <- `Edge` CoreEdge WeightAttr ;
-    WeightAttr  <- OSQBRACKET WEIGHT EQ weight:Weight CSQBRACKET;
+    WeightAttr  <- OSQBRACKET WEIGHT EQ
+                   weight:Weight CSQBRACKET;
     Weight      <- `Weight` value:<digit>+;
     #// end //
     
@@ -2787,8 +2794,10 @@ state active
       "2nd Edition";
       "3rd Edition";
       // edge definitions
-      "1st Edition" -- "2nd Edition" [weight = 5];
-      "2nd Edition" -- "3rd Edition" [colour = #000];
+      "1st Edition" -- "2nd Edition"
+          [weight = 5];
+      "2nd Edition" -- "3rd Edition"
+          [colour = #000];
     }
     #// end //
   }
