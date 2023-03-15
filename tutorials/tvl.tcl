@@ -288,10 +288,8 @@ void: EOL      <- '\n' / '\r' ;
       }
 
       if {$generator in {"Choice" "Feature"}} {
-        puts stderr "HERE1:         ${:context} define $generator {*}$asgmt"
         ${:context} define $generator {*}$asgmt
       } else {
-        puts stderr "HERE2=$asgmt"
         if {[llength $asgmt]} {
           [${:context} root get] configure {*}$asgmt
           [${:context} root get] register
@@ -325,7 +323,6 @@ void: EOL      <- '\n' / '\r' ;
     }
     
     :public method rewriteChoices {} {
-      puts rewriteChoices([:name get])=[info exists :owned]
       if {[info exists :owned]} {
         foreach choice ${:owned} {
           $choice rewrite
@@ -339,7 +336,6 @@ void: EOL      <- '\n' / '\r' ;
   Choice mixins add [nx::Class new {
     :property -accessor public optionals:object,type=Feature,0..* {
       :public object method value=set {obj prop values} {
-        puts stderr ===OPTS=$values
         next
         foreach v $values {
           $obj candidates add $v
@@ -356,7 +352,6 @@ void: EOL      <- '\n' / '\r' ;
     }
 
     :public method rewrite {} {
-      puts REWRITE-[:optionals exists]-[:lower get]-[:upper get]
       if {[:optionals exists]} {
         if {[:lower get] && [:upper get] == [:card] && [:lower get] == [:upper get]} {
           foreach cand ${:candidates} {
@@ -368,7 +363,6 @@ void: EOL      <- '\n' / '\r' ;
             $oc register
             lappend choices $oc
           }
-          # puts ....[${:context} info class]
           ${:context} owned set $choices
           # TODO: fix cleanup
           ${:model} eval [list :owned delete [self]]
@@ -398,7 +392,6 @@ void: EOL      <- '\n' / '\r' ;
   
   set tvlOParser [TVLOGrm new -factory [::djdsl::v1e::ModelFactory new]]
   set o [$tvlOParser parse $s]
-  puts stderr O=$o
   ? {$o info class} ::djdsl::v1e::Model
   ? {[$o root get] name get} "MultiLingualHelloWorld"
   ? {$o nrValidConfigurations} 6
