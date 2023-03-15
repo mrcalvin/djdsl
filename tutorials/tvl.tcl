@@ -627,7 +627,7 @@ void: EOL      <- '\n' / '\r' ;
     :define Choice -context ${:root} -lower 0 -upper 1 \
         -candidates [:define Feature -name "Repeat"]
   }]
-  
+
   ? {$m1 nrValidConfigurations} 6
   
 }
