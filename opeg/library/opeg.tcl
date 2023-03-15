@@ -822,7 +822,7 @@ apply {{version prj code {test ""}} {
 
       set qTgt ${:name}::$tgt
 
-      puts RULES=[dict keys ${:rules}]
+      # puts RULES=[dict keys ${:rules}]
       if {![dict exists ${:rules} $src]} {
         throw [list DJDSL OPEG TRANSFORM NX $src] "The source non-terminal '$src' does not exist."
       }
@@ -830,7 +830,7 @@ apply {{version prj code {test ""}} {
       set rhs [dict get ${:rules} $src]
 
       set called [pt::pe::op called $rhs]
-      puts CALLED=$called
+      # puts CALLED=$called
       if {$rewrite} {
         foreach c $called {
           set qNt ${:name}::[namespace tail $c]
@@ -942,16 +942,16 @@ apply {{version prj code {test ""}} {
 
       lassign [:unqualify2 ${:rules} ${:all}] rules ntMap
 
-      puts ">>>>>>>"
+      # puts ">>>>>>>"
       dict for {nt rhs} $rules {
         dict set rules $nt [list is $rhs mode [dict get ${:modes} [dict get $ntMap $nt]]]
-        puts "$nt <- $rhs"
+        # puts "$nt <- $rhs"
       }
-      puts "<<<<<<<"
+      # puts "<<<<<<<"
       set peg [list pt::grammar::peg [list rules $rules start [list n [string map {:: //} ${:start}]]]]
       
       pt::peg verify-as-canonical $peg
-      puts SPEC=${:specs}
+      # puts SPEC=${:specs}
       return $peg
     }
 
@@ -1709,7 +1709,7 @@ apply {{version prj code {test ""}} {
         set later [list]
         set changed 0
         foreach cmd $cmds {
-          puts CMD=$cmd
+          # puts CMD=$cmd
           try $cmd on error {e} {puts $e; lappend later $cmd} on ok {} {set changed 1}
         }
         set cmds $later
@@ -1763,7 +1763,7 @@ apply {{version prj code {test ""}} {
       set factory [[:info class] factory get]
       $factory eval [list set :sourcecode $script]
       $factory eval [list set :callingNamespace $ns]
-      puts ast=$ast
+      # puts ast=$ast
       $factory postOrder v $ast {
         if {$v ne "" && [::nsf::object::exists $v]} {
           lappend list $v
@@ -2997,7 +2997,7 @@ state active
     S <- 'a' &'b';
     D <- 'a' !'e';
   }
-  puts ----[G rules get]
+  # puts ----[G rules get]
   
   
   #
@@ -3173,7 +3173,7 @@ state active
 
   set coordParser [[pt::rde::nx pgen $g1] new]
   # $coordParser print {(11,22)}
-  puts stderr [$coordParser parset {(11,22)}]
+  # puts stderr [$coordParser parset {(11,22)}]
 }
 
 
