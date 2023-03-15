@@ -194,8 +194,11 @@ apply {{version prj code {test ""}} {
       return $rf
     }
 
-    :public method setRoot {featName} {
-      # set featName [lindex $args end]
+## PREVIOUSLY:
+##    :public method setRoot {featName} {
+##      # set featName [lindex $args end]
+    :public method setRoot {args} {
+      set featName [lindex $args end]
       ${:root} name set $featName
       :featureSet $featName ${:root}
       return ${:root}
@@ -506,6 +509,9 @@ apply {{version prj code {test ""}} {
                 ${:system} <= $c $f $p
               } else {
                 # [0,1] n>1
+                puts "TODO: $c"
+                # TODO: is this needed? 
+                
                 # group of optional features
 
                 # pt 1: disjunction term 
