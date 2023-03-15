@@ -194,9 +194,12 @@ apply {{version prj code {test ""}} {
       return $rf
     }
 
-## PREVIOUSLY:
-##    :public method setRoot {featName} {
-##      # set featName [lindex $args end]
+    ## PREVIOUSLY:
+    ##    :public method setRoot {featName} {
+    ##      # set featName [lindex $args end]
+    ##      # ...    
+    ## }
+    
     :public method setRoot {args} {
       set featName [lindex $args end]
       ${:root} name set $featName
