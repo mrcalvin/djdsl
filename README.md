@@ -37,7 +37,7 @@ The supplemental material includes the multi-DSL development system DjDSL.
 ## Quickstart
 
 1. Download the self-contained executable (`djdslkit`) for your OS
-    from the [releases][] page. 
+    from the [releases](https://github.com/mrcalvin/djdsl/releases) page. 
 2. Execute `djdslkit` from your terminal or command prompt to enter
    the DjDSL/Tcl shell:
 
