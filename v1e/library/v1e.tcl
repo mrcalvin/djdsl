@@ -188,10 +188,14 @@ apply {{version prj code {test ""}} {
     }
 
     :protected method setup {} {
-      set rf [:define Feature -name ""]
-      set rc [:define Choice -lower 1 -upper 1 -candidates $rf]
-      lappend :choices $rc
-      return $rf
+      if {![info exists :root]} {
+        set rf [:define Feature -name ""]
+        set rc [:define Choice -lower 1 -upper 1 -candidates $rf]
+        lappend :choices $rc
+        return $rf
+      } else {
+        return ${:root}
+      }
     }
 
     ## PREVIOUSLY:
@@ -672,9 +676,10 @@ apply {{version prj code {test ""}} {
           # inject the constraints feature expressions into the BDD
           # system, if any ...
           set fexprs [lmap cstr [${:model} getOwnedElements ::djdsl::v1e::Constraint] {
-            $cstr cget -expression
+            if {![$cstr expression exists]} {continue} else {$cstr cget -expression};
           }]
 
+          puts fexprs=$fexprs
           if {[llength $fexprs]} {
             ${:system} & ${:model} ${:model} [:add {*}$fexprs]
           }
@@ -970,7 +975,7 @@ apply {{version prj code {test ""}} {
   }
 
   nx::Class create Constraint -superclasses Model::Element {
-    :property expression
+    :property -accessor public expression
     :public method register {args} {}
     :public object method with {expr} {
       return [list [list -expression $expr] "" -constraints]

@@ -280,7 +280,7 @@ void: EOL      <- '\n' / '\r' ;
   namespace import ::djdsl::v1e::*
 
   nx::Class create ::djdsl::v1e::ModelFactory -superclasses ModelFactory {
-    :variable context:lm:object,type=::djdsl::v1e::Model
+    :variable context:object,type=::djdsl::v1e::Model
 
     :public method generate {nt generator asgmt} {
       if {![info exists :context]} {
