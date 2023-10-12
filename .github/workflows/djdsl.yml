@@ -1,0 +1,240 @@
+name: mrcalvin/djdsl
+on:
+  push:
+    branches: master
+    tags-ignore: latest
+  pull_request:
+concurrency:
+  group: "${{ github.ref }}"
+  cancel-in-progress: true
+env:
+  TOKEN: "${{ secrets.TOKEN }}"
+  ERROR_ON_FAILURES: '1'
+  SHELL: "${{ secrets.SHELL }}"
+jobs:
+  Windows-xc:
+    id: Windows-xc
+    runs-on: ubuntu-latest
+    defaults:
+        shell: bash
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4.0.0
+    - name: Install Tcl
+      if: ${{ !env.ACT }}
+      run: |
+        sudo apt update
+        sudo apt-get install -y tcl
+        sudo apt-get install -y gcc-mingw-w64-x86-64-posix
+    - name: get sources
+      run: |
+        wget -O kitcreator-tmp.tar.gz https://github.com/rkeene/KitCreator/archive/refs/heads/mr_calvin-tclbdd.tar.gz
+        tar -xzf kitcreator-tmp.tar.gz
+    - name: pre
+      working-directory: KitCreator-mr_calvin-tclbdd
+      run: |
+        ./build/pre.sh || exit 1
+    - name: Build and install DjDSL
+      working-directory: ${{ github.workspace }}
+      run: |
+        ./configure --with-tcl=no --moddir=$(pwd)/KitCreator-mr_calvin-tclbdd/djdsl/out.tmp/lib/tcl8/8.6
+        make install
+        echo 'cp -rp out.tmp out' > KitCreator-mr_calvin-tclbdd/djdsl/build.sh
+        chmod u+x KitCreator-mr_calvin-tclbdd/djdsl/build.sh
+    - name: Build kit
+      working-directory: KitCreator-mr_calvin-tclbdd
+      run: |
+        export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
+        ./build/make-kit-win64 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
+        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}.exe"
+        cp -p tclkit-8.6.10 ../${ARTIFACT}
+    - name: Run tests
+      if: startsWith(github.job, runner.os)
+      working-directory: ${{ github.workspace }}
+      run: |
+        make TCLSH="$(pwd)/KitCreator-mr_calvin-tclbdd/tclkit-8.6.10" test
+    - name: Upload kit
+      if: ${{ !env.ACT }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: kits
+        path: djdslkit-*
+  Linux:
+    id: Linux
+    runs-on: ubuntu-latest
+    defaults:
+        shell: bash
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4.0.0
+    - name: Install Tcl
+      if: ${{ !env.ACT }}
+      run: |
+        sudo apt update
+        sudo apt-get install -y tcl
+    - name: get sources
+      run: |
+        wget -O kitcreator-tmp.tar.gz https://github.com/rkeene/KitCreator/archive/refs/heads/mr_calvin-tclbdd.tar.gz
+        tar -xzf kitcreator-tmp.tar.gz
+    - name: pre
+      working-directory: KitCreator-mr_calvin-tclbdd
+      run: |
+        ./build/pre.sh || exit 1
+    - name: Build and install DjDSL
+      working-directory: ${{ github.workspace }}
+      run: |
+        ./configure --with-tcl=no --moddir=$(pwd)/KitCreator-mr_calvin-tclbdd/djdsl/out.tmp/lib/tcl8/8.6
+        make install
+        echo 'cp -rp out.tmp out' > KitCreator-mr_calvin-tclbdd/djdsl/build.sh
+        chmod u+x KitCreator-mr_calvin-tclbdd/djdsl/build.sh
+    - name: Build kit
+      working-directory: KitCreator-mr_calvin-tclbdd
+      run: |
+        export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
+        ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
+        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}"
+        cp -p tclkit-8.6.10 ../${ARTIFACT}
+    - name: Run tests
+      if: startsWith(github.job, runner.os)
+      working-directory: ${{ github.workspace }}
+      run: |
+        make TCLSH="$(pwd)/KitCreator-mr_calvin-tclbdd/tclkit-8.6.10" test
+    - name: Upload kit
+      if: ${{ !env.ACT }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: kits
+        path: djdslkit-*          
+  macOS:
+    id: macOS
+    runs-on: macos-latest
+    defaults:
+      shell: bash
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4.0.0
+    - name: get sources
+      run: |
+        wget -O kitcreator-tmp.tar.gz https://github.com/rkeene/KitCreator/archive/refs/heads/mr_calvin-tclbdd.tar.gz
+        tar -xzf kitcreator-tmp.tar.gz
+    - name: pre
+      working-directory: KitCreator-mr_calvin-tclbdd
+      run: |
+        ./build/pre.sh || exit 1
+    - name: Build and install DjDSL
+      working-directory: ${{ github.workspace }}
+      run: |
+        ./configure --with-tcl=no --moddir=${{ github.workspace }}/KitCreator-mr_calvin-tclbdd/djdsl/out.tmp/lib/tcl8/8.6
+        make install
+        echo 'cp -rp out.tmp out' > KitCreator-mr_calvin-tclbdd/djdsl/build.sh
+        chmod u+x KitCreator-mr_calvin-tclbdd/djdsl/build.sh
+    - name: Build kit
+      working-directory: KitCreator-mr_calvin-tclbdd
+      run: |
+        export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
+        ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
+        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}"
+        cp -p tclkit-8.6.10 ../${ARTIFACT}
+    - name: Run tests
+      if: startsWith(github.job, runner.os)
+      working-directory: ${{ github.workspace }}
+      run: |
+        make TCLSH="$(pwd)/KitCreator-mr_calvin-tclbdd/tclkit-8.6.10" test
+    - name: Upload kit
+      if: ${{ !env.ACT }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: kits
+        path: djdslkit-*
+  Windows-native:
+    id: Windows-native
+    if: ${{ false }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - name: Install MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        install: git mingw-w64-x86_64-toolchain make patch
+        #location: C:\
+        release: false
+    - name: checkout
+      uses: actions/checkout@v4.0.0
+    - name: get sources
+      run: |
+        wget -O kitcreator-tmp.tar.gz https://github.com/rkeene/KitCreator/archive/refs/heads/mr_calvin-tclbdd.tar.gz
+        tar -xzf kitcreator-tmp.tar.gz
+    - name: pre
+      working-directory: KitCreator-mr_calvin-tclbdd
+      run: |
+        ./build/pre.sh || exit 1
+    - name: Build and install DjDSL
+      working-directory: ${{ github.workspace }}
+      run: |
+        ./configure --with-tcl=no --moddir=$(pwd)/KitCreator-mr_calvin-tclbdd/djdsl/out.tmp/lib/tcl8/8.6
+        make install
+        echo 'cp -rp out.tmp out' > KitCreator-mr_calvin-tclbdd/djdsl/build.sh
+        chmod u+x KitCreator-mr_calvin-tclbdd/djdsl/build.sh
+    - name: Build kit
+      working-directory: KitCreator-mr_calvin-tclbdd
+      run: |
+        export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
+        ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
+        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}.exe"
+        cp -p tclkit-8.6.10 ../${ARTIFACT}
+    - name: Run tests
+      if: startsWith(github.job, runner.os)
+      working-directory: ${{ github.workspace }}
+      run: |
+        make TCLSH="$(pwd)/KitCreator-mr_calvin-tclbdd/tclkit-8.6.10" test
+    - name: Upload kit
+      if: ${{ !env.ACT }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: kits
+        path: djdslkit-*
+  autotag:
+    needs:
+    - Linux
+    - macOS
+    - Windows-xc
+    # - Windows-native
+    runs-on: ubuntu-latest
+    outputs:
+      tagname: ${{ steps.addtag.outputs.tagname }}
+    if: github.ref_type == 'branch'
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4.0.0
+    - name: Add a tag
+      id: addtag
+      run: |
+        git tag -f latest;
+        git push --tags -f https://mrcalvin:${TOKEN}@github.com/${{ github.repository_owner/github.repository }}.git
+        echo "tagname=latest" >> $GITHUB_OUTPUT
+  deploy:
+    needs: autotag
+    runs-on: ubuntu-latest
+    # TODO: add condition for branch builds with autotag
+    if: ${{ github.ref_type == 'tag' || needs.autotag.outputs.tagname == 'latest'}}
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4.0.0
+    - uses: actions/download-artifact@v3
+      with:
+        name: kits
+    - uses: softprops/action-gh-release@v0.1.15
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        GITHUB_REPOSITORY: "${{ github.repository }}"
+      with:
+        files: djdslkit-*
+        prerelease: true
+        body: Automated DjDSL development build.
+        draft: false
+        tag_name: ${{ needs.autotag.outputs.tagname }}
+        name: Latest DjDSL development build (latest)
