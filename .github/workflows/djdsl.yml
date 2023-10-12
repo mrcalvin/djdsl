@@ -13,9 +13,9 @@ env:
   SHELL: "${{ secrets.SHELL }}"
 jobs:
   Windows-xc:
-    id: Windows-xc
     runs-on: ubuntu-latest
     defaults:
+      run:
         shell: bash
     steps:
     - name: checkout
@@ -60,9 +60,9 @@ jobs:
         name: kits
         path: djdslkit-*
   Linux:
-    id: Linux
     runs-on: ubuntu-latest
     defaults:
+      run:
         shell: bash
     steps:
     - name: checkout
@@ -106,10 +106,10 @@ jobs:
         name: kits
         path: djdslkit-*          
   macOS:
-    id: macOS
     runs-on: macos-latest
     defaults:
-      shell: bash
+      run:
+        shell: bash
     steps:
     - name: checkout
       uses: actions/checkout@v4.0.0
@@ -147,7 +147,6 @@ jobs:
         name: kits
         path: djdslkit-*
   Windows-native:
-    id: Windows-native
     if: ${{ false }}
     runs-on: windows-latest
     timeout-minutes: 10
