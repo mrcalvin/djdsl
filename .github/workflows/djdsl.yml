@@ -1,7 +1,7 @@
 name: mrcalvin/djdsl
 on:
   push:
-    branches: master
+    branches: main
     tags-ignore: latest
   pull_request:
 concurrency:
