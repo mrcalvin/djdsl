@@ -134,7 +134,7 @@ jobs:
         export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
         ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
         export ARTIFACT=$(echo "djdslkit-${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}" | tr '[:upper:]' '[:lower:]')
-        cp -p tclkit-8.6.10 ../${ARTIFACT,,}
+        cp -p tclkit-8.6.10 ../${ARTIFACT}
     - name: Run tests
       if: startsWith(github.job, runner.os)
       working-directory: ${{ github.workspace }}
@@ -184,7 +184,7 @@ jobs:
         export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
         ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
         export ARTIFACT=$(echo "djdslkit-${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}" | tr '[:upper:]' '[:lower:]')
-        cp -p tclkit-8.6.10 ../${ARTIFACT,,}
+        cp -p tclkit-8.6.10 ../${ARTIFACT}
     - name: Run tests
       if: startsWith(github.job, runner.os)
       working-directory: ${{ github.workspace }}
