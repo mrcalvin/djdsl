@@ -46,8 +46,8 @@ jobs:
       run: |
         export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
         ./build/make-kit-win64 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
-        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}.exe"
-        cp -p tclkit-8.6.10 ../${ARTIFACT}
+        export ARTIFACT="djdslkit-${{ github.ref_name }}-windows-x64.exe"
+        cp -p tclkit-8.6.10 ../${ARTIFACT,,}
     - name: Run tests
       if: startsWith(github.job, runner.os)
       working-directory: ${{ github.workspace }}
@@ -92,8 +92,8 @@ jobs:
       run: |
         export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
         ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
-        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}"
-        cp -p tclkit-8.6.10 ../${ARTIFACT}
+        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}"
+        cp -p tclkit-8.6.10 ../${ARTIFACT,,}
     - name: Run tests
       if: startsWith(github.job, runner.os)
       working-directory: ${{ github.workspace }}
@@ -133,8 +133,8 @@ jobs:
       run: |
         export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
         ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
-        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}"
-        cp -p tclkit-8.6.10 ../${ARTIFACT}
+        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}"
+        cp -p tclkit-8.6.10 ../${ARTIFACT,,}
     - name: Run tests
       if: startsWith(github.job, runner.os)
       working-directory: ${{ github.workspace }}
@@ -183,8 +183,8 @@ jobs:
       run: |
         export KITCREATOR_PKGS='tcllib tclbdd nsf djdsl'
         ./kitcreator 8.6.10 --enable-64bit --enable-kit-storage=cvfs || (cat tcl/build.log && cat tcllib/build.log && cat nsf/build.log && cat tclbdd/build.log && cat djdsl/build.log && exit 1)
-        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}.exe"
-        cp -p tclkit-8.6.10 ../${ARTIFACT}
+        export ARTIFACT="djdslkit-${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}.exe"
+        cp -p tclkit-8.6.10 ../${ARTIFACT,,}
     - name: Run tests
       if: startsWith(github.job, runner.os)
       working-directory: ${{ github.workspace }}
@@ -205,21 +205,22 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tagname: ${{ steps.addtag.outputs.tagname }}
-    if: github.ref_type == 'branch'
     steps:
     - name: checkout
       uses: actions/checkout@v4.0.0
-    - name: Add a tag
+    - name: Add autotag
       id: addtag
       run: |
-        git tag -f latest;
-        git push --tags -f https://mrcalvin:${TOKEN}@github.com/${{ github.repository }}.git
-        echo "tagname=latest" >> $GITHUB_OUTPUT
+        if [ "${{ github.ref_type }}" == "branch" ] ; then
+          git tag -f latest;
+          git push --tags -f https://mrcalvin:${TOKEN}@github.com/${{ github.repository }}.git
+          echo "tagname=latest" >> $GITHUB_OUTPUT
+        else
+          echo "tagname=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+        fi
   deploy:
     needs: autotag
     runs-on: ubuntu-latest
-    # TODO: add condition for branch builds with autotag
-    if: ${{ github.ref_type == 'tag' || needs.autotag.outputs.tagname == 'latest'}}
     steps:
     - name: checkout
       uses: actions/checkout@v4.0.0
