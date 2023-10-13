@@ -146,6 +146,29 @@ jobs:
       with:
         name: kits
         path: djdslkit-*
+  Windows-testing:
+    needs: Windows-xc
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - name: Install MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        install: make
+        release: false
+    - name: checkout
+      uses: actions/checkout@v4.0.0
+    - uses: actions/download-artifact@v3
+      with:
+        name: kits
+    - name: Run tests
+      if: startsWith(github.job, runner.os)
+      working-directory: ${{ github.workspace }}
+      run: |
+        make TCLSH="$(pwd)/djdslkit-${{ github.ref_name }}-windows-x64.exe" test
   Windows-native:
     if: ${{ false }}
     runs-on: windows-latest
@@ -200,7 +223,7 @@ jobs:
     needs:
     - Linux
     - macOS
-    - Windows-xc
+    - Windows-testing
     # - Windows-native
     runs-on: ubuntu-latest
     outputs:
