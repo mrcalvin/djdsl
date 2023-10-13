@@ -213,7 +213,7 @@ jobs:
       id: addtag
       run: |
         git tag -f latest;
-        git push --tags -f https://mrcalvin:${TOKEN}@github.com/${{ github.repository_owner }}/${{ github.repository }}.git
+        git push --tags -f https://mrcalvin:${TOKEN}@github.com/${{ github.repository }}.git
         echo "tagname=latest" >> $GITHUB_OUTPUT
   deploy:
     needs: autotag
